@@ -1,16 +1,18 @@
 import defaultProcessingJson from '../config/default-processing.json'
-import { txSide } from './raw'
+import { txSide, type Side } from './raw'
 import type { Transaction } from './types'
 
 /*
  * 加工の設定。3. に並べるカード（加工の部品）の一覧で、有効なカードを 2. の集計の前に当てはめる。
  * 新しい加工は ProcessingModule に種類を足し、applyProcessing で実装する。
+ * 考え方は docs/real-income-expense.md と docs/offset-and-living-cost.md を参照。
  */
 
 /**
- * 指定したカテゴリーの取引を除く。実収入と実支出は同じ形のカードにする。
- * - excludeIncome: 収入（プラスの取引）だけから除く。「実収入」を出すため
- * - excludeExpense: 支出（マイナスの取引）だけから除く。「実支出」を出すため
+ * 指定したカテゴリーの取引を除く。収入側と支出側は同じ形のカードにする。
+ * - excludeIncome: 収入（プラスの取引）だけから除く
+ * - excludeExpense: 支出（マイナスの取引）だけから除く
+ * 管理の外との移動だけを除いた場合が、家計調査でいう実収入・実支出にあたる
  */
 export interface ExcludeModule {
   id: string
@@ -20,19 +22,22 @@ export interface ExcludeModule {
 }
 
 /**
- * 収入側のカテゴリー from の記録を、支出側のカテゴリー to から差し引く。to が空なら、どのカテゴリーにも付けずに
- * 支出全体から差し引く（UNASSIGNED_OFFSET として数える）。
- * enabled が false なら差し引かない（除くだけ）。to は覚えておき、もう一度有効にしたときに使う
+ * 除いたカテゴリーの記録を、反対側からも差し引く。
+ * - side: from がどちら側で除いたカテゴリーか（収入側なら支出から、支出側なら収入から差し引く）
+ * - to: 差し引く反対側のカテゴリー。空なら、どのカテゴリーにも付けずに全体から差し引く（UNASSIGNED_OFFSET として数える）
+ * - enabled: false なら差し引かない（除くだけ）。to は覚えておき、もう一度有効にしたときに使う
  */
 export interface OffsetPair {
+  side: Side
   from: string
   enabled: boolean
   to: string
 }
 
 /**
- * 相殺。実収入のカードで除いたカテゴリーのうち、支出の打ち消しにあたるもの（割り勘の回収・返金・ポイントなど）を、
- * 支出の値引き（支出側のマイナス）として数え直す。「除く」に「支出からも差し引く」を足したもの
+ * 相殺。除いたもののうち、反対側の打ち消しにあたるものを、反対側からも差し引く（収支は変わらない）。
+ * - 収入 → 支出: 割り勘の回収・返金・ポイントなど、支出の値引きにあたるもの
+ * - 支出 → 収入: 家賃など、生活費の範囲から外したいもの（それらを払った後に使える収入になる）
  */
 export interface OffsetModule {
   id: string
@@ -41,7 +46,7 @@ export interface OffsetModule {
   pairs: OffsetPair[]
 }
 
-/** 差し引く先を指定しない相殺を数えるカテゴリー名（どのカテゴリーにも属さない支出の値引き） */
+/** 差し引く先を指定しない相殺を数えるカテゴリー名（どのカテゴリーにも属さない差し引き） */
 export const UNASSIGNED_OFFSET = '差し引き（指定なし）'
 
 export type ProcessingModule = ExcludeModule | OffsetModule
@@ -62,9 +67,9 @@ function parseModule(m: RawModule): ProcessingModule {
     return { id: m.id, type: m.type, enabled: Boolean(m.enabled), categories: strings(m.categories) }
   }
   if (m.type === 'offset' && Array.isArray(m.pairs)) {
-    const pairs = (m.pairs as { from?: unknown; enabled?: unknown; to?: unknown }[])
-      .filter((p) => typeof p?.from === 'string')
-      .map((p) => ({ from: p.from as string, enabled: Boolean(p.enabled), to: typeof p.to === 'string' ? p.to : '' }))
+    const pairs = (m.pairs as { side?: unknown; from?: unknown; enabled?: unknown; to?: unknown }[])
+      .filter((p) => typeof p?.from === 'string' && (p.side === 'income' || p.side === 'expense'))
+      .map((p) => ({ side: p.side as Side, from: p.from as string, enabled: Boolean(p.enabled), to: typeof p.to === 'string' ? p.to : '' }))
     return { id: m.id, type: 'offset', enabled: Boolean(m.enabled), pairs }
   }
   throw new Error(`未対応のカードです: ${String(m.type)}`)
@@ -79,47 +84,49 @@ export function parseProcessingConfig(raw: unknown): ProcessingConfig {
 /** 初期設定。中身は src/config/default-processing.json で編集する */
 export const defaultProcessing: ProcessingConfig = parseProcessingConfig(defaultProcessingJson)
 
+export const opposite = (side: Side): Side => (side === 'income' ? 'expense' : 'income')
+
 /** 有効なカードが除くカテゴリー（収入側・支出側） */
-export function excludedCategories(config: ProcessingConfig): { income: Set<string>; expense: Set<string> } {
-  const income = new Set<string>()
-  const expense = new Set<string>()
+export function excludedCategories(config: ProcessingConfig): Record<Side, Set<string>> {
+  const result: Record<Side, Set<string>> = { income: new Set(), expense: new Set() }
   for (const m of config.modules) {
     if (!m.enabled || m.type === 'offset') continue
-    for (const c of m.categories) (m.type === 'excludeIncome' ? income : expense).add(c)
+    for (const c of m.categories) result[m.type === 'excludeIncome' ? 'income' : 'expense'].add(c)
   }
-  return { income, expense }
+  return result
 }
 
 /**
- * 有効な相殺（収入側のカテゴリー → 差し引く支出側のカテゴリー）。
- * 実収入のカードで除いているカテゴリーで、チェックを入れたものだけ。差し引く先が空なら UNASSIGNED_OFFSET
+ * 有効な相殺（除いたカテゴリー → 差し引く反対側のカテゴリー）を、除いた側ごとに返す。
+ * その側の「除く」カードで除いているカテゴリーで、チェックを入れたものだけ。差し引く先が空なら UNASSIGNED_OFFSET
  */
-export function offsetTargets(config: ProcessingConfig): Map<string, string> {
-  const { income } = excludedCategories(config)
-  const map = new Map<string, string>()
+export function offsetTargets(config: ProcessingConfig): Record<Side, Map<string, string>> {
+  const excluded = excludedCategories(config)
+  const result: Record<Side, Map<string, string>> = { income: new Map(), expense: new Map() }
   for (const m of config.modules) {
-    if (m.enabled && m.type === 'offset') for (const p of m.pairs) if (p.enabled && income.has(p.from)) map.set(p.from, p.to || UNASSIGNED_OFFSET)
+    if (!m.enabled || m.type !== 'offset') continue
+    for (const p of m.pairs) if (p.enabled && excluded[p.side].has(p.from)) result[p.side].set(p.from, p.to || UNASSIGNED_OFFSET)
   }
-  return map
+  return result
 }
 
 /**
  * 有効なカードを当てはめた取引を返す。
- * - 収入側: 実収入のカードで除くものは除く。そのうち相殺するものは、差し引く先の支出の値引き（支出側・プラスの金額）にする
- * - 支出側: 実支出のカードで除くものは除く。相殺の差し引く先が除いている支出なら、相殺した分も一緒に除く
+ * - 除くカードで除くものは除く
+ * - そのうち相殺するものは、反対側のカテゴリーの差し引きとして数え直す（side を反対側にし、金額の符号はそのまま）。
+ *   収入側の記録（プラス）を支出側にすると支出が減り、支出側の記録（マイナス）を収入側にすると収入が減る
+ * - 差し引く先が反対側で除いているカテゴリーなら、相殺した分も一緒に除く
  */
 export function applyProcessing(txs: Transaction[], config: ProcessingConfig): Transaction[] {
-  const { income, expense } = excludedCategories(config)
+  const excluded = excludedCategories(config)
   const offsets = offsetTargets(config)
-  if (!income.size && !expense.size) return txs
+  if (!excluded.income.size && !excluded.expense.size) return txs
   return txs.flatMap((t): Transaction[] => {
     const side = txSide(t)
-    if (side === 'income') {
-      if (!income.has(t.category)) return [t]
-      const target = offsets.get(t.category)
-      return target && !expense.has(target) ? [{ ...t, category: target, side: 'expense' }] : []
-    }
-    return side === 'expense' && expense.has(t.category) ? [] : [t]
+    if (!side || !excluded[side].has(t.category)) return [t]
+    const target = offsets[side].get(t.category)
+    const other = opposite(side)
+    return target && !excluded[other].has(target) ? [{ ...t, category: target, side: other }] : []
   })
 }
 
@@ -130,6 +137,14 @@ export function updateModule(config: ProcessingConfig, id: string, patch: Module
 
 /** その種類の有効なカード（実際に何かを当てはめるもの）があるか */
 export function hasActiveModule(config: ProcessingConfig, type: ProcessingModule['type']): boolean {
-  if (type === 'offset') return offsetTargets(config).size > 0
+  if (type === 'offset') {
+    const o = offsetTargets(config)
+    return o.income.size + o.expense.size > 0
+  }
   return config.modules.some((m) => m.type === type && m.enabled && m.categories.length > 0)
+}
+
+/** 2. の収入側・支出側に、何かしらの加工がかかっているか（見出しを「加工後」にするため） */
+export function isProcessed(config: ProcessingConfig, side: Side): boolean {
+  return excludedCategories(config)[side].size > 0 || offsetTargets(config)[opposite(side)].size > 0
 }

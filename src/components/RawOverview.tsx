@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
 import { flatten, reconcileGroups, sortByTotal } from '../domain/groups'
-import { applyProcessing, excludedCategories, hasActiveModule, offsetTargets, UNASSIGNED_OFFSET, type ProcessingConfig } from '../domain/processing'
+import { applyProcessing, excludedCategories, hasActiveModule, isProcessed, offsetTargets, opposite, UNASSIGNED_OFFSET, type ProcessingConfig } from '../domain/processing'
 import { categoryTotals, emptyCategoryStat, rankByTotal, rawCategoryStats, rawMonthlyRows, type RawMonth, type Side } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
@@ -70,11 +70,13 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
   const processed = useMemo(() => applyProcessing(transactions, processing), [transactions, processing])
   const excluded = useMemo(() => excludedCategories(processing), [processing])
   const offsets = useMemo(() => offsetTargets(processing), [processing])
+  // 3. の加工がかかっている側は「加工後」と出す（実収入・実支出は、移動だけを除いた場合の家計調査の言葉なのでとっておく）
   const labels: Record<Mode, string> = {
-    expense: hasActiveModule(processing, 'excludeExpense') ? '実支出' : '支出',
-    income: hasActiveModule(processing, 'excludeIncome') ? '実収入' : '収入',
+    expense: isProcessed(processing, 'expense') ? '支出（加工後）' : '支出',
+    income: isProcessed(processing, 'income') ? '収入（加工後）' : '収入',
     balance: '収支',
   }
+  const sideName: Record<Side, string> = { income: '収入', expense: '支出' }
 
   const inPeriod = useMemo(() => filterByMonths(processed, from, to), [processed, from, to])
   const rows = useMemo(() => rawMonthlyRows(inPeriod, from, to), [inPeriod, from, to])
@@ -103,10 +105,9 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
 
   /** 3. の加工でこの行に起きていること（行を薄くして添える） */
   const processedNote = (c: string) => {
-    if (side === 'expense') return excluded.expense.has(c) ? `${labels.expense}から除外中` : undefined
-    const target = offsets.get(c)
-    if (target) return target === UNASSIGNED_OFFSET ? '支出全体から差し引き中' : `${target}から差し引き中`
-    return excluded.income.has(c) ? `${labels.income}から除外中` : undefined
+    const target = offsets[side].get(c)
+    if (target) return target === UNASSIGNED_OFFSET ? `${sideName[opposite(side)]}全体から差し引き中` : `${target}から差し引き中`
+    return excluded[side].has(c) ? `${sideName[side]}から除外中` : undefined
   }
   const legendRows: LegendRow[] = flatten(groups).map((c) => ({
     category: c,
@@ -117,7 +118,7 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
 
   // グラフは重いので、系列とデータは関係する値が変わったときだけ作り直す
   // 相殺で差し引いた分により期間合計がマイナスになる系列も残す（円グラフの内側の輪・棒グラフの0の下に出す）
-  const unassigned = side === 'expense' ? stats.get(UNASSIGNED_OFFSET) : undefined
+  const unassigned = stats.get(UNASSIGNED_OFFSET)
   const series = useMemo(() => {
     const list = displaySeries(current).map((s) => ({
       ...s,
@@ -153,8 +154,8 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
   }
 
   const activeLabels = [
-    labels.income !== '収入' && labels.income,
-    labels.expense !== '支出' && labels.expense,
+    hasActiveModule(processing, 'excludeIncome') && '収入から除く',
+    hasActiveModule(processing, 'excludeExpense') && '支出から除く',
     hasActiveModule(processing, 'offset') && '相殺',
   ].filter(Boolean)
 
@@ -209,7 +210,7 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
             </div>
             {unassigned?.total ? (
               <p className="muted small">
-                {UNASSIGNED_OFFSET}: 期間合計 {yen(unassigned.total)}（どのカテゴリーにも付けずに、支出全体から差し引いた分。グラフでは灰色）
+                {UNASSIGNED_OFFSET}: 期間合計 {yen(unassigned.total)}（どのカテゴリーにも付けずに、{sideName[side]}全体から差し引いた分。グラフでは灰色）
               </p>
             ) : null}
             <CategoryLegendTable

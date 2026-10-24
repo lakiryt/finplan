@@ -8,6 +8,7 @@ import {
   offsetTargets,
   parseProcessingConfig,
   updateModule,
+  isProcessed,
   UNASSIGNED_OFFSET,
   type ProcessingConfig,
 } from './processing'
@@ -22,7 +23,8 @@ const config: ProcessingConfig = {
     { id: 'off', type: 'offset', enabled: false, pairs: [] },
   ],
 }
-const withOffset = (to: string, base = config, on = true) => updateModule(base, 'off', { enabled: true, pairs: [{ from: '回収', enabled: on, to }] })
+const withOffset = (to: string, base = config, on = true) =>
+  updateModule(base, 'off', { enabled: true, pairs: [{ side: 'income', from: '回収', enabled: on, to }] })
 const noExpenseCard = (c: ProcessingConfig) => updateModule(c, 'exp', { enabled: false })
 
 describe('processing', () => {
@@ -75,14 +77,14 @@ describe('offset (相殺)', () => {
   it('only applies to categories excluded by the income card', () => {
     // 実収入のカードで除いていなければ、相殺も効かない（相殺は「除く」の一種）
     const notExcluded = withOffset('食費', updateModule(config, 'inc', { categories: [] }))
-    expect(offsetTargets(notExcluded).size).toBe(0)
+    expect(offsetTargets(notExcluded).income.size).toBe(0)
     expect(applyProcessing(txs, noExpenseCard(notExcluded)).find((t) => t.memo === '割り勘 半額')?.category).toBe('回収')
     expect(hasActiveModule(withOffset('食費', updateModule(config, 'inc', { enabled: false })), 'offset')).toBe(false)
   })
 
   it('just excludes when the row is unchecked, keeping the chosen target', () => {
     const unchecked = withOffset('食費', config, false)
-    expect(offsetTargets(unchecked).size).toBe(0)
+    expect(offsetTargets(unchecked).income.size).toBe(0)
     expect(applyProcessing(txs, unchecked).some((t) => t.memo === '割り勘 半額')).toBe(false)
   })
 
@@ -92,5 +94,39 @@ describe('offset (相殺)', () => {
     expect(balance(applyProcessing(txs, noExpenseCard(withOffset(''))))).toBe(balance(txs))
     expect(hasActiveModule(withOffset(''), 'offset')).toBe(true)
     expect(applyProcessing(txs, withOffset('貯蓄')).some((t) => t.memo === '割り勘 半額')).toBe(false)
+  })
+})
+
+describe('offset from expense to income (支出 → 収入)', () => {
+  const txs = parseCsv(csv).transactions
+  const rows = (list: typeof txs) => rawMonthlyRows(list, '2026-01', '2026-03')
+  const balance = (list: typeof txs) => rows(list).reduce((s, r) => s + r.income - r.expense, 0)
+  // 家賃を生活費の範囲から外し、同じ額を給与から差し引く
+  const rent = (to: string): ProcessingConfig => ({
+    version: 1,
+    modules: [
+      { id: 'inc', type: 'excludeIncome', enabled: false, categories: [] },
+      { id: 'exp', type: 'excludeExpense', enabled: true, categories: ['家賃'] },
+      { id: 'off', type: 'offset', enabled: true, pairs: [{ side: 'expense', from: '家賃', enabled: true, to }] },
+    ],
+  })
+
+  it('removes the expense and subtracts the same amount from income, keeping the balance', () => {
+    const out = applyProcessing(txs, rent('給与'))
+    const jan = rows(out)[0]
+    // 1月: 家賃 60,000 を支出から外し、給与 200,000 から差し引く
+    expect(jan.byCategory.expense.家賃).toBeUndefined()
+    expect(jan.byCategory.income.給与).toBe(140000)
+    expect(balance(out)).toBe(balance(txs))
+    // 単に除くだけだと、収支が家賃の分だけ良く見えてしまう
+    const excludeOnly = updateModule(rent('給与'), 'off', { enabled: false })
+    expect(balance(applyProcessing(txs, excludeOnly))).toBe(balance(txs) + 68000)
+  })
+
+  it('subtracts from the whole income when no target is chosen', () => {
+    const out = applyProcessing(txs, rent(''))
+    expect(rows(out)[0].byCategory.income[UNASSIGNED_OFFSET]).toBe(-60000)
+    expect(hasActiveModule(rent(''), 'offset')).toBe(true)
+    expect(isProcessed(rent(''), 'income')).toBe(true)
   })
 })
