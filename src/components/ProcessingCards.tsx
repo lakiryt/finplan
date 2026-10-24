@@ -1,18 +1,10 @@
 import { useMemo, type ReactNode } from 'react'
-import {
-  setIncomeRule,
-  updateModule,
-  type ExcludeExpenseModule,
-  type IncomeModule,
-  type IncomeRule,
-  type ModulePatch,
-  type ProcessingConfig,
-} from '../domain/processing'
+import { updateModule, type ExcludeModule, type ModulePatch, type OffsetModule, type ProcessingConfig } from '../domain/processing'
 import { categoryTotals, rankByTotal } from '../domain/raw'
 import type { Transaction } from '../domain/types'
 import { yen } from './format'
 import { InfoTip } from './InfoTip'
-import { RealExpenseInfo, RealIncomeInfo } from './ProcessingInfo'
+import { OffsetInfo, RealExpenseInfo, RealIncomeInfo } from './ProcessingInfo'
 
 interface Props {
   config: ProcessingConfig
@@ -31,14 +23,16 @@ export function ProcessingCards({ config, onChange, transactions }: Props) {
     [transactions],
   )
   const update = (id: string, patch: ModulePatch) => onChange(updateModule(config, id, patch))
+  // 相殺のカードに並べるのは、実収入のカードで除いたカテゴリー
+  const incomeCard = config.modules.find((m): m is ExcludeModule => m.type === 'excludeIncome')
 
   return (
     <div className="cards">
       {config.modules.map((m) =>
-        m.type === 'income' ? (
-          <IncomeCard key={m.id} module={m} totals={totals} update={(p) => update(m.id, p)} />
+        m.type === 'offset' ? (
+          <OffsetCard key={m.id} module={m} incomeCard={incomeCard} totals={totals} update={(p) => update(m.id, p)} />
         ) : (
-          <ExcludeExpenseCard key={m.id} module={m} totals={totals} update={(p) => update(m.id, p)} />
+          <ExcludeCard key={m.id} module={m} totals={totals} update={(p) => update(m.id, p)} />
         ),
       )}
     </div>
@@ -73,95 +67,101 @@ function optionsFor(amounts: Map<string, number>, selected: string[]): string[] 
 
 const amountLabel = (amounts: Map<string, number>, c: string) => (amounts.has(c) ? yen(amounts.get(c)!) : 'データに無し')
 
-/** 「実収入」のカード。収入側のカテゴリーごとに、残す・除く・相殺を選ぶ */
-function IncomeCard({ module: m, totals, update }: { module: IncomeModule; totals: Totals; update: (patch: ModulePatch) => void }) {
-  const ruleOf = new Map(m.rules.map((r) => [r.category, r]))
-  const excluded = m.rules.filter((r) => r.action === 'exclude')
-  const offset = m.rules.filter((r) => r.action === 'offset' && r.to)
-  const targets = rankByTotal(totals.expense)
-  const setRule = (category: string, rule: IncomeRule | null) => update({ rules: setIncomeRule(m, category, rule) })
-  const sum = (rules: IncomeRule[]) => rules.reduce((s, r) => s + (totals.income.get(r.category) ?? 0), 0)
+/** 実収入と実支出は同じ形のカードにする（除くカテゴリーにチェックを入れる） */
+const EXCLUDE_TEXT = {
+  excludeIncome: {
+    title: '実収入',
+    side: 'income',
+    description: '収入から除くカテゴリーを選びます（貯金の引き出し・臨時収入・割り勘の回収など、ふだんの稼ぎではないもの）。',
+    info: <RealIncomeInfo />,
+  },
+  excludeExpense: {
+    title: '実支出',
+    side: 'expense',
+    description: '支出から除くカテゴリーを選びます（貯金・投資など、使ったのではなく置き場所を移しただけのお金）。',
+    info: <RealExpenseInfo />,
+  },
+} as const
 
-  return (
-    <Card
-      title="実収入"
-      enabled={m.enabled}
-      onToggle={(enabled) => update({ enabled })}
-      info={<RealIncomeInfo />}
-      summary={`除く${excluded.length}件（${yen(sum(excluded))}）・相殺${offset.length}件（${yen(sum(offset))}）`}
-    >
-      <p className="muted small">
-        収入側のカテゴリーごとに、残す（稼いだお金）・除く（管理の外から戻った自分のお金）・相殺（支出の打ち消し）を選びます。
-      </p>
-      <div className="card-options">
-        {optionsFor(
-          totals.income,
-          m.rules.map((r) => r.category),
-        ).map((c) => {
-          const rule = ruleOf.get(c)
-          const action = rule?.action ?? 'keep'
-          return (
-            <div key={c} className="card-option income-option">
-              <span>{c || '（空欄）'}</span>
-              <span className="muted small num">{amountLabel(totals.income, c)}</span>
-              <select
-                value={action}
-                aria-label={`${c}の扱い`}
-                onChange={(e) => {
-                  const next = e.target.value
-                  setRule(c, next === 'exclude' ? { category: c, action: 'exclude' } : next === 'offset' ? { category: c, action: 'offset', to: '' } : null)
-                }}
-              >
-                <option value="keep">残す</option>
-                <option value="exclude">除く</option>
-                <option value="offset">相殺</option>
-              </select>
-              {rule?.action === 'offset' && (
-                <label className="offset-target">
-                  →
-                  <select value={rule.to} onChange={(e) => setRule(c, { category: c, action: 'offset', to: e.target.value })}>
-                    <option value="">差し引く支出を選ぶ</option>
-                    {targets.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                  から差し引く
-                </label>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </Card>
-  )
-}
-
-/** 「実支出」のカード。支出側の「移動」（積立など）のカテゴリーを除く */
-function ExcludeExpenseCard({ module: m, totals, update }: { module: ExcludeExpenseModule; totals: Totals; update: (patch: ModulePatch) => void }) {
-  const excludedTotal = m.categories.reduce((s, c) => s + (totals.expense.get(c) ?? 0), 0)
+function ExcludeCard({ module: m, totals, update }: { module: ExcludeModule; totals: Totals; update: (patch: ModulePatch) => void }) {
+  const text = EXCLUDE_TEXT[m.type]
+  const amounts = totals[text.side]
+  const excludedTotal = m.categories.reduce((s, c) => s + (amounts.get(c) ?? 0), 0)
   const toggle = (category: string, on: boolean) =>
     update({ categories: on ? [...m.categories, category] : m.categories.filter((c) => c !== category) })
 
   return (
     <Card
-      title="実支出"
+      title={text.title}
       enabled={m.enabled}
       onToggle={(enabled) => update({ enabled })}
-      info={<RealExpenseInfo />}
+      info={text.info}
       summary={`${m.categories.length}件を除く（全期間で${yen(excludedTotal)}）`}
     >
-      <p className="muted small">支出から除くカテゴリーを選びます（貯金・投資など、使ったのではなく置き場所を移しただけのお金）。</p>
+      <p className="muted small">{text.description}</p>
       <div className="card-options">
-        {optionsFor(totals.expense, m.categories).map((c) => (
+        {optionsFor(amounts, m.categories).map((c) => (
           <label key={c} className="card-option">
             <input type="checkbox" checked={m.categories.includes(c)} onChange={(e) => toggle(c, e.target.checked)} />
             <span>{c || '（空欄）'}</span>
-            <span className="muted small num">{amountLabel(totals.expense, c)}</span>
+            <span className="muted small num">{amountLabel(amounts, c)}</span>
           </label>
         ))}
       </div>
+    </Card>
+  )
+}
+
+/** 相殺のカード。実収入のカードで除いたカテゴリーごとに、支出からも差し引くか（どの支出から）を選ぶ */
+function OffsetCard({
+  module: m,
+  incomeCard,
+  totals,
+  update,
+}: {
+  module: OffsetModule
+  incomeCard: ExcludeModule | undefined
+  totals: Totals
+  update: (patch: ModulePatch) => void
+}) {
+  const candidates = incomeCard?.categories ?? []
+  const targetOf = new Map(m.pairs.map((p) => [p.from, p.to]))
+  const active = candidates.filter((c) => targetOf.get(c))
+  const offsetTotal = active.reduce((s, c) => s + (totals.income.get(c) ?? 0), 0)
+  const targets = rankByTotal(totals.expense)
+  const setTarget = (from: string, to: string) =>
+    update({ pairs: to ? [...m.pairs.filter((p) => p.from !== from), { from, to }] : m.pairs.filter((p) => p.from !== from) })
+
+  return (
+    <Card
+      title="相殺"
+      enabled={m.enabled}
+      onToggle={(enabled) => update({ enabled })}
+      info={<OffsetInfo />}
+      summary={`${active.length}件を支出から差し引く（全期間で${yen(offsetTotal)}）`}
+    >
+      <p className="muted small">実収入から除いたもののうち、支出の打ち消しにあたるもの（割り勘の回収・返金・ポイントなど）を、どの支出から差し引くか選びます。</p>
+      {!incomeCard?.enabled && <p className="small warn-text">実収入のカードが無効なので、相殺も反映されません。</p>}
+      {candidates.length === 0 ? (
+        <p className="muted small">実収入のカードで除くカテゴリーを選ぶと、ここに並びます。</p>
+      ) : (
+        <div className="card-options">
+          {candidates.map((c) => (
+            <div key={c} className="card-option offset-option">
+              <span>{c || '（空欄）'}</span>
+              <span className="muted small num">{amountLabel(totals.income, c)}</span>
+              <select value={targetOf.get(c) ?? ''} onChange={(e) => setTarget(c, e.target.value)} aria-label={`${c}を差し引く支出`}>
+                <option value="">差し引かない（除くだけ）</option>
+                {targets.map((t) => (
+                  <option key={t} value={t}>
+                    {t}から差し引く
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+      )}
     </Card>
   )
 }

@@ -57,16 +57,6 @@ describe('config', () => {
     expect(defaultConfig.rules.length).toBeGreaterThan(0)
   })
 
-  it('migrates v1 memo rules', () => {
-    const c = parseConfig({
-      version: 1,
-      groups: config.groups,
-      categoryGroup: {},
-      memoRules: [{ id: '1', pattern: '携帯', isRegex: false, category: '通信' }],
-    })
-    expect(c.rules[0]).toMatchObject({ match: { memo: '携帯' }, effect: { category: '通信' }, enabled: true })
-  })
-
   it('rejects broken configs', () => {
     expect(() => parseConfig({ version: 2, groups: [{ id: 'a', role: 'nope' }], categoryGroup: {}, rules: [] })).toThrow()
   })

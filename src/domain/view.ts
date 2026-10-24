@@ -19,22 +19,12 @@ export interface ViewConfig {
 const isGroups = (v: unknown): v is CategoryGroup[] =>
   Array.isArray(v) && v.every((g) => g && typeof g === 'object' && 'id' in g && Array.isArray((g as CategoryGroup).members))
 
-/** 保存された設定を検証する。v1（離れたカテゴリーもまとめられた形式）は、まとめをグループとして引き継ぐ */
+/** 保存された設定を検証する */
 export function parseViewConfig(raw: unknown): ViewConfig {
   const c = raw as Record<string, unknown> | null
   if (!c || typeof c !== 'object') throw new Error('表示の設定の形式が正しくありません')
   const colors = (c.colors && typeof c.colors === 'object' ? c.colors : {}) as Record<string, string>
 
-  if (c.version === 1) {
-    const supers = Array.isArray(c.superCategories) ? (c.superCategories as { id: string; label?: string; members: string[] }[]) : []
-    return {
-      version: 2,
-      useSuperCategories: Boolean(c.useSuperCategories),
-      colors,
-      groups: supers.filter((s) => s.members?.length).map((s) => ({ id: s.id, label: s.label, members: s.members })),
-      incomeGroups: [],
-    }
-  }
   if (c.version !== 2) throw new Error(`未対応の表示の設定のバージョンです: ${c.version}`)
   if (!isGroups(c.groups)) throw new Error('groups の形式が正しくありません')
   return {

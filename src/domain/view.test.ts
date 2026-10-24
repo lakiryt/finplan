@@ -60,11 +60,10 @@ describe('display', () => {
     expect(fromSide(base, 'expense', changeGroups(withSide(base, 'expense'), [g('e', ['A', 'B'])])).incomeGroups).toEqual(base.incomeGroups)
   })
 
-  it('parses configs (including v1)', () => {
+  it('parses configs', () => {
     expect(parseViewConfig({ version: 2, colors: {}, groups: [] }).incomeGroups).toEqual([])
     expect(defaultView.version).toBe(2)
-    const migrated = parseViewConfig({ version: 1, colors: {}, superCategories: [{ id: 's', label: 'S', members: ['A', 'B'] }] })
-    expect(migrated.groups).toEqual([{ id: 's', label: 'S', members: ['A', 'B'] }])
+    expect(() => parseViewConfig({ version: 1, colors: {}, superCategories: [] })).toThrow()
     expect(() => parseViewConfig({ version: 2, colors: {}, groups: [{ members: [] }] })).toThrow()
   })
 })

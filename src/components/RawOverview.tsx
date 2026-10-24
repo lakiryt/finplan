@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
 import { flatten, reconcileGroups, sortByTotal } from '../domain/groups'
-import { applyProcessing, excludedExpenses, hasActiveModule, incomeRules, type ProcessingConfig } from '../domain/processing'
+import { applyProcessing, excludedCategories, hasActiveModule, offsetTargets, type ProcessingConfig } from '../domain/processing'
 import { categoryTotals, emptyCategoryStat, rankByTotal, rawCategoryStats, rawMonthlyRows, type RawMonth, type Side } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
@@ -67,11 +67,11 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
   const side: Side = mode === 'income' ? 'income' : 'expense'
 
   const processed = useMemo(() => applyProcessing(transactions, processing), [transactions, processing])
-  const rulesByCategory = useMemo(() => incomeRules(processing), [processing])
-  const excludedExpense = useMemo(() => excludedExpenses(processing), [processing])
+  const excluded = useMemo(() => excludedCategories(processing), [processing])
+  const offsets = useMemo(() => offsetTargets(processing), [processing])
   const labels: Record<Mode, string> = {
     expense: hasActiveModule(processing, 'excludeExpense') ? '実支出' : '支出',
-    income: hasActiveModule(processing, 'income') ? '実収入' : '収入',
+    income: hasActiveModule(processing, 'excludeIncome') ? '実収入' : '収入',
     balance: '収支',
   }
 
@@ -102,11 +102,9 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
 
   /** 3. の加工でこの行に起きていること（行を薄くして添える） */
   const processedNote = (c: string) => {
-    if (side === 'expense') return excludedExpense.has(c) ? `${labels.expense}から除外中` : undefined
-    const rule = rulesByCategory.get(c)
-    if (rule?.action === 'exclude') return `${labels.income}から除外中`
-    if (rule?.action === 'offset' && rule.to) return `${rule.to}から差し引き中`
-    return undefined
+    if (side === 'expense') return excluded.expense.has(c) ? `${labels.expense}から除外中` : undefined
+    if (offsets.has(c)) return `${offsets.get(c)}から差し引き中`
+    return excluded.income.has(c) ? `${labels.income}から除外中` : undefined
   }
   const legendRows: LegendRow[] = flatten(groups).map((c) => ({
     category: c,
@@ -147,7 +145,11 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
     }
   }
 
-  const activeLabels = [labels.income !== '収入' && labels.income, labels.expense !== '支出' && labels.expense].filter(Boolean)
+  const activeLabels = [
+    labels.income !== '収入' && labels.income,
+    labels.expense !== '支出' && labels.expense,
+    hasActiveModule(processing, 'offset') && '相殺',
+  ].filter(Boolean)
 
   return (
     <UndoSessionContext.Provider value={session}>

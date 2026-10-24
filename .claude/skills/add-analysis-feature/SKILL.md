@@ -38,7 +38,7 @@ finplan では「このカテゴリーはこう扱う」をコードに書かな
    - 取引を増やす・動かす効果（按分など）は、`classify` の戻り値を展開する形にする。集計側（`aggregate.ts`）は変えずに済むようにする。
 3. **画面**: `src/components/RuleEditor.tsx` の「条件」または「効果」の行に入力欄を足す。
 4. **テスト**: `src/domain/classify.test.ts` に、架空のカテゴリー名のデータ（共通のものは `testData.ts`）でテストを足す。期間の境界、無効なルール、他の効果との重なりも確かめる。
-5. **設定の互換性**: 項目を足すだけなら `version` は上げなくてよい。意味や形を変える場合は `version` を上げ、`src/domain/config.ts` の `parseConfig` に移行処理を書く。
+5. **設定の互換性**: 今はまだ後方互換を考えない段階なので、移行処理は書かない。形を変えたら `src/config/default-*.json` と `src/config/local/default-*.json` を新しい形に直す。
 6. **ドキュメント**: `CLAUDE.md` の「ルールの意味」と、このスキルの表を更新する。
 7. 確認: `npx tsc -b`、`npm test`、`npm run lint`。実データで効果を見るなら `npm run inspect`。
 
