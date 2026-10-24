@@ -24,7 +24,7 @@ export function SummaryCard({ label, stats, selected, onSelect }: Props) {
         </span>
       </div>
       <div className="muted small">
-        {stats.count}か月 / 最小 {yen(stats.min)} ・ 最大 {yen(stats.max)}
+        最小 {yen(stats.min)} ・ 最大 {yen(stats.max)}
       </div>
     </button>
   )
