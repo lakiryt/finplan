@@ -17,7 +17,10 @@ interface Props {
 
 const uid = () => crypto.randomUUID()
 
-/** 3. の加工。工程（除外・相殺）ごとのカードに、条件をバッジとして並べる */
+/**
+ * 3. の加工。工程ごとのカードに、条件をバッジとして並べる。
+ * 相殺が原則なので先に置き、相手方が家計簿の外にあるもの（積立など）だけを除外で除く
+ */
 export function ProcessingCards({ config, onChange, transactions }: Props) {
   const categories = useMemo<Record<Side, string[]>>(
     () => ({ income: rankByTotal(categoryTotals(transactions, 'income')), expense: rankByTotal(categoryTotals(transactions, 'expense')) }),
@@ -27,26 +30,26 @@ export function ProcessingCards({ config, onChange, transactions }: Props) {
   return (
     <div className="steps">
       <StepCard
-        kind="exclude"
-        title="除外"
-        info={<ExcludeInfo />}
-        description="条件に当たる記録を、その側（収入か支出）から除きます。"
-        step={config.exclude}
-        onChange={(exclude) => onChange({ ...config, exclude })}
-        categories={categories}
-        transactions={transactions}
-        toRule={(d, id): ExcludeRule => ({ id, enabled: d.enabled, when: d.when })}
-      />
-      <StepCard
         kind="offset"
         title="相殺"
         info={<OffsetInfo />}
-        description="条件に当たる記録をその側から除き、反対側からも同じ額を差し引きます（収支は変わりません）。"
+        description="条件に当たる記録をその側から除き、反対側からも同じ額を差し引きます（収支は変わりません）。まずこちらで打ち消せるものを打ち消します。"
         step={config.offset}
         onChange={(offset) => onChange({ ...config, offset })}
         categories={categories}
         transactions={transactions}
         toRule={(d, id): OffsetRule => ({ id, enabled: d.enabled, when: d.when, target: d.target ?? '' })}
+      />
+      <StepCard
+        kind="exclude"
+        title="除外"
+        info={<ExcludeInfo />}
+        description="相手方が家計簿の外にあるもの（積立・貯金の引き出しなど）を、その側から除きます。"
+        step={config.exclude}
+        onChange={(exclude) => onChange({ ...config, exclude })}
+        categories={categories}
+        transactions={transactions}
+        toRule={(d, id): ExcludeRule => ({ id, enabled: d.enabled, when: d.when })}
       />
     </div>
   )
