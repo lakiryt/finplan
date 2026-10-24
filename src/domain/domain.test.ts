@@ -7,17 +7,18 @@ import { expenseRanking, rawExpenseByCategory, rawMonthlyRows } from './raw'
 import { median, seriesStats } from './stats'
 import type { ClassifyConfig, Rule } from './types'
 import {
-  applyDisplayNames,
-  assignColors,
-  assignSuper,
-  createSuper,
+  colorsInUse,
   defaultView,
-  deleteSuper,
-  moveKey,
-  orderKeys,
+  detachCategory,
+  displaySeries,
+  mergeWithNext,
+  moveCategory,
   parseViewConfig,
-  renameSuper,
-  type ViewConfig,
+  reconcileGroups,
+  resizeGroup,
+  sortByTotal,
+  ungroup,
+  type CategoryGroup,
 } from './view'
 
 const csv = `金額,日付,メモ,カテゴリー名
@@ -180,55 +181,85 @@ describe('raw (no processing)', () => {
   })
 })
 
-describe('view', () => {
-  const txs = parseCsv(csv).transactions
-  const view: ViewConfig = {
-    version: 1,
-    useSuperCategories: true,
-    colors: {},
-    order: [],
-    superCategories: [{ id: 's', label: '住まいと食', members: ['食費', '家賃'] }],
+describe('view groups', () => {
+  /** テスト用に決まった順でIDを作る */
+  const ids = () => {
+    let n = 0
+    return () => `n${n++}`
   }
+  const g = (id: string, members: string[], extra: Partial<CategoryGroup> = {}): CategoryGroup => ({ id, members, ...extra })
+  const shape = (groups: CategoryGroup[]) => groups.map((x) => x.members.join('+'))
 
-  it('merges categories into super categories only when enabled', () => {
-    expect(applyDisplayNames(txs, view).map((t) => t.category)).toContain('住まいと食')
-    expect(applyDisplayNames(txs, { ...view, useSuperCategories: false })).toEqual(txs)
-    const rows = rawMonthlyRows(applyDisplayNames(txs, view), '2026-01', '2026-01')
-    expect(rows[0].expenseByCategory).toEqual({ 住まいと食: 66000 })
+  // A B C D E がそれぞれ1件ずつ
+  const singles = ['A', 'B', 'C', 'D', 'E'].map((c) => g(`c:${c}`, [c]))
+
+  it('reconciles saved groups with the categories in the data', () => {
+    const r = reconcileGroups([g('x', ['B', 'Z', 'C'], { label: 'まとめ' })], ['A', 'B', 'C', 'D'])
+    expect(r).toEqual([g('x', ['B', 'C'], { label: 'まとめ' }), g('c:A', ['A']), g('c:D', ['D'])])
   })
 
-  it('keeps chosen colors, fills the rest from the palette without duplicates, then falls back', () => {
-    expect(assignColors(['a', 'b', 'c', 'd'], { b: '#111111' }, ['#111111', '#222222', '#333333'], '#999999')).toEqual({
-      a: '#222222',
-      b: '#111111',
-      c: '#333333',
-      d: '#999999',
-    })
+  it('merges adjacent groups, keeping the upper name and color', () => {
+    const groups = [g('x', ['A', 'B'], { label: '上', color: '#111111' }), g('y', ['C'], { label: 'C' })]
+    expect(mergeWithNext(groups, 0)).toEqual([g('x', ['A', 'B', 'C'], { label: '上', color: '#111111' })])
+    // 1件だけのグループの名前は引き継がない
+    expect(mergeWithNext([g('a', ['A'], { label: 'A名' }), g('b', ['B'])], 0)).toEqual([g('a', ['A', 'B'])])
   })
 
-  it('orders keys by saved order first, then by fallback ranking', () => {
-    expect(orderKeys(['a', 'b', 'c', 'd'], ['c', 'x'], ['d', 'a', 'b', 'c'])).toEqual(['c', 'd', 'a', 'b'])
+  it('detaches a category, splitting the group around it', () => {
+    const groups = [g('x', ['A', 'B', 'C'], { label: 'まとめ' }), g('y', ['D'])]
+    expect(detachCategory(groups, 'B', ids())).toEqual([g('x', ['A'], { label: 'まとめ' }), g('n0', ['B']), g('n1', ['C']), g('y', ['D'])])
+    // 先頭を切り離すと、名前は残りの側に残る
+    expect(detachCategory(groups, 'A', ids())).toEqual([g('n0', ['A']), g('x', ['B', 'C'], { label: 'まとめ' }), g('y', ['D'])])
   })
 
-  it('moves a key to the target position', () => {
-    expect(moveKey(['a', 'b', 'c', 'd'], 'a', 'c')).toEqual(['b', 'c', 'a', 'd'])
-    expect(moveKey(['a', 'b', 'c', 'd'], 'd', 'b')).toEqual(['a', 'd', 'b', 'c'])
+  it('resizes a group by dragging its edge: absorbs covered rows and releases the rest', () => {
+    const grown = resizeGroup(singles, 'c:B', 1, 3, ids())
+    expect(shape(grown)).toEqual(['A', 'B+C+D', 'E'])
+    expect(grown[1].id).toBe('c:B')
+    const shrunk = resizeGroup(grown, 'c:B', 1, 1, ids())
+    expect(shape(shrunk)).toEqual(['A', 'B', 'C', 'D', 'E'])
+    // 他のグループの一部だけを覆った場合、そのグループの残りはそのまま
+    const partial = resizeGroup([g('x', ['A']), g('y', ['B', 'C', 'D'], { label: 'Y' }), g('z', ['E'])], 'x', 0, 1, ids())
+    expect(partial).toEqual([g('x', ['A', 'B']), g('y', ['C', 'D'], { label: 'Y' }), g('z', ['E'])])
   })
 
-  it('edits super categories', () => {
-    let v = createSuper(view, 'n', '新しい', '通信')
-    expect(v.superCategories[1]).toEqual({ id: 'n', label: '新しい', members: ['通信'] })
-    v = assignSuper(v, '食費', 'n')
-    expect(v.superCategories.map((s) => s.members)).toEqual([['家賃'], ['通信', '食費']])
-    v = assignSuper(v, '食費', null)
-    expect(v.superCategories[1].members).toEqual(['通信'])
-    v = renameSuper({ ...v, colors: { 新しい: '#123456' }, order: ['新しい'] }, 'n', '改名')
-    expect(v).toMatchObject({ colors: { 改名: '#123456' }, order: ['改名'] })
-    expect(deleteSuper(v, 'n').superCategories).toHaveLength(1)
+  it('moves a category: joins a group only when dropped inside it', () => {
+    const groups = [g('x', ['A', 'B', 'C']), g('d', ['D'], { color: '#222222' }), g('e', ['E'])]
+    // D を B の位置へ（下から上なので B の前）→ A と B の間に入り、x に加わる
+    expect(shape(moveCategory(groups, 'D', 'B', ids()))).toEqual(['A+D+B+C', 'E'])
+    // D を E の後ろへ → 1件だけのグループのまま（色も保つ）
+    expect(moveCategory(groups, 'D', 'E', ids())).toEqual([g('x', ['A', 'B', 'C']), g('e', ['E']), g('d', ['D'], { color: '#222222' })])
+    // A を C の位置へ（上から下なので C の後ろ）→ グループの端なので外れる
+    expect(shape(moveCategory(groups, 'A', 'C', ids()))).toEqual(['B+C', 'A', 'D', 'E'])
   })
 
-  it('loads the default view file and rejects broken ones', () => {
-    expect(defaultView.version).toBe(1)
-    expect(() => parseViewConfig({ version: 1, colors: {}, superCategories: [{ members: [] }] })).toThrow()
+  it('ungroups and sorts by total while keeping groups together', () => {
+    expect(shape(ungroup([g('x', ['A', 'B'])], 'x', ids()))).toEqual(['A', 'B'])
+    const totals = new Map([['A', 1], ['B', 5], ['C', 2], ['D', 4]])
+    expect(shape(sortByTotal([g('x', ['A', 'C']), g('b', ['B']), g('d', ['D'])], totals))).toEqual(['B', 'D', 'C+A'])
+  })
+
+  it('builds chart series per category or per group', () => {
+    const groups = [g('x', ['A', 'B'], { label: 'まとめ' }), g('c', ['C'])]
+    const colors = { A: '#aaaaaa', C: '#cccccc' }
+    expect(displaySeries(groups, { useSuperCategories: false, colors }).map((s) => [s.label, s.color])).toEqual([
+      ['A', '#aaaaaa'],
+      ['B', undefined],
+      ['C', '#cccccc'],
+    ])
+    expect(displaySeries(groups, { useSuperCategories: true, colors }).map((s) => [s.label, s.color])).toEqual([
+      ['まとめ', undefined],
+      ['C', '#cccccc'],
+    ])
+  })
+
+  it('lists colors in use and parses configs (including v1)', () => {
+    expect(colorsInUse({ version: 2, useSuperCategories: false, colors: { A: '#AA0000' }, groups: [g('x', ['B'], { color: '#aa0000' })] })).toEqual([
+      '#aa0000',
+    ])
+    expect(defaultView.version).toBe(2)
+    const migrated = parseViewConfig({ version: 1, colors: {}, superCategories: [{ id: 's', label: 'S', members: ['A', 'B'] }] })
+    expect(migrated.groups).toEqual([{ id: 's', label: 'S', members: ['A', 'B'] }])
+    expect(() => parseViewConfig({ version: 2, colors: {}, groups: [{ members: [] }] })).toThrow()
   })
 })

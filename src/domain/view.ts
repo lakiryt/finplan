@@ -1,136 +1,239 @@
 import defaultViewJson from '../config/default-view.json'
-import type { Transaction } from './types'
 
-/** 表示上だけ複数のカテゴリーをまとめるもの。集計の加工（ルール）とは別 */
-export interface SuperCategory {
+/**
+ * スーパーカテゴリー。表の上で連続したカテゴリーの範囲を1つにまとめる（表示上だけで、集計の加工とは別）。
+ * 1件だけのグループは「まとめていない」カテゴリーと同じ。
+ */
+export interface CategoryGroup {
   id: string
-  label: string
+  /** 未設定なら中身のカテゴリー名から作る */
+  label?: string
+  /** 未設定なら灰色（1件だけのグループはカテゴリーの色） */
+  color?: string
   members: string[]
 }
 
 /** 表示の設定。分類の設定（ClassifyConfig）とは独立している */
 export interface ViewConfig {
-  version: 1
+  version: 2
+  /** グラフをスーパーカテゴリー単位で表示するか（表は変わらない） */
   useSuperCategories: boolean
-  /** 表示名（カテゴリー名またはスーパーカテゴリー名）→ 色（#rrggbb） */
+  /** カテゴリー名 → 色（#rrggbb）。未設定は灰色 */
   colors: Record<string, string>
-  /** 表示名の並び順（表・グラフ共通）。ここに無いものは支出の多い順で後ろに並ぶ */
-  order: string[]
-  superCategories: SuperCategory[]
+  /** 表の並び順そのもの。グループの順に、中身を順に並べたものが表の行になる */
+  groups: CategoryGroup[]
 }
 
+export type IdGenerator = () => string
+
+/** 保存された設定を検証する。v1（離れたカテゴリーもまとめられた形式）は、まとめをグループとして引き継ぐ */
 export function parseViewConfig(raw: unknown): ViewConfig {
-  const c = raw as Partial<ViewConfig> | null
-  if (!c || typeof c !== 'object' || c.version !== 1) throw new Error('表示の設定の形式が正しくありません')
-  if (!c.colors || typeof c.colors !== 'object') throw new Error('colors がありません')
-  if (!Array.isArray(c.superCategories) || !c.superCategories.every((s) => s.id && Array.isArray(s.members))) {
-    throw new Error('superCategories の形式が正しくありません')
+  const c = raw as Record<string, unknown> | null
+  if (!c || typeof c !== 'object') throw new Error('表示の設定の形式が正しくありません')
+  const colors = (c.colors && typeof c.colors === 'object' ? c.colors : {}) as Record<string, string>
+
+  if (c.version === 1) {
+    const supers = Array.isArray(c.superCategories) ? (c.superCategories as { id: string; label?: string; members: string[] }[]) : []
+    return {
+      version: 2,
+      useSuperCategories: Boolean(c.useSuperCategories),
+      colors,
+      groups: supers.filter((s) => s.members?.length).map((s) => ({ id: s.id, label: s.label, members: s.members })),
+    }
   }
-  return {
-    version: 1,
-    useSuperCategories: Boolean(c.useSuperCategories),
-    colors: c.colors,
-    order: Array.isArray(c.order) ? c.order : [],
-    superCategories: c.superCategories,
+  if (c.version !== 2) throw new Error(`未対応の表示の設定のバージョンです: ${c.version}`)
+  if (!Array.isArray(c.groups) || !c.groups.every((g) => g && g.id && Array.isArray(g.members))) {
+    throw new Error('groups の形式が正しくありません')
   }
+  return { version: 2, useSuperCategories: Boolean(c.useSuperCategories), colors, groups: c.groups as CategoryGroup[] }
 }
 
 /** 初期設定。中身は src/config/default-view.json で編集する */
 export const defaultView: ViewConfig = parseViewConfig(defaultViewJson)
 
-export const superLabel = (s: SuperCategory) => s.label || s.id
+export const groupLabel = (g: CategoryGroup) => g.label || g.members.join('・')
 
-export function superOf(view: ViewConfig, category: string): SuperCategory | undefined {
-  return view.superCategories.find((s) => s.members.includes(category))
-}
-
-/** カテゴリー名 → 表示名。スーパーカテゴリーを使わない設定なら、そのまま返す */
-export function displayNameOf(view: ViewConfig): (category: string) => string {
-  if (!view.useSuperCategories) return (c) => c
-  const map = new Map<string, string>()
-  for (const s of view.superCategories) for (const m of s.members) if (!map.has(m)) map.set(m, superLabel(s))
-  return (c) => map.get(c) ?? c
-}
-
-/** カテゴリーを表示名に置き換えた取引を返す（集計関数をそのまま使えるように） */
-export function applyDisplayNames(txs: Transaction[], view: ViewConfig): Transaction[] {
-  const nameOf = displayNameOf(view)
-  return txs.map((t) => {
-    const category = nameOf(t.category)
-    return category === t.category ? t : { ...t, category }
-  })
-}
-
-/** order にあるものをその順で先に、残りは fallback（支出の多い順など）の順で並べる */
-export function orderKeys(keys: string[], order: string[], fallback: string[]): string[] {
-  const rank = (k: string) => {
-    const i = order.indexOf(k)
-    if (i >= 0) return i
-    const j = fallback.indexOf(k)
-    return order.length + (j >= 0 ? j : fallback.length)
-  }
-  return [...keys].sort((a, b) => rank(a) - rank(b))
-}
-
-/** keys（今の並び）の中で moving を target の位置に動かした新しい並びを返す */
-export function moveKey(keys: string[], moving: string, target: string): string[] {
-  const from = keys.indexOf(moving)
-  const to = keys.indexOf(target)
-  if (from < 0 || to < 0 || from === to) return keys
-  const next = keys.filter((k) => k !== moving)
-  next.splice(to, 0, moving)
-  return next
-}
+export const flatten = (groups: CategoryGroup[]) => groups.flatMap((g) => g.members)
 
 /**
- * 並び順に沿って色を決める。選ばれた色を優先し、残りは palette を先頭から（選ばれた色を飛ばして）割り当てる。
- * palette を使い切ったら fallback（目立たない色）にする。同じ色を使い回さないため
+ * 保存されたグループを今のデータに合わせる。データに無いカテゴリーは外し、グループに入っていないカテゴリーは
+ * categories の順（支出の多い順など）で1件ずつのグループとして後ろに足す
  */
-export function assignColors(keys: string[], chosen: Record<string, string>, palette: string[], fallback: string): Record<string, string> {
-  const used = new Set(keys.map((k) => chosen[k]?.toLowerCase()).filter(Boolean))
-  const free = palette.filter((c) => !used.has(c.toLowerCase()))
-  const out: Record<string, string> = {}
-  let i = 0
-  for (const key of keys) out[key] = chosen[key] ?? free[i++] ?? fallback
+export function reconcileGroups(groups: CategoryGroup[], categories: string[]): CategoryGroup[] {
+  const exists = new Set(categories)
+  const seen = new Set<string>()
+  const out: CategoryGroup[] = []
+  for (const g of groups) {
+    const members = g.members.filter((m) => exists.has(m) && !seen.has(m))
+    members.forEach((m) => seen.add(m))
+    if (members.length) out.push({ ...g, members })
+  }
+  const ids = new Set(out.map((g) => g.id))
+  for (const c of categories) {
+    if (seen.has(c)) continue
+    let id = `c:${c}`
+    while (ids.has(id)) id += '_'
+    ids.add(id)
+    out.push({ id, members: [c] })
+  }
   return out
 }
 
-// ---- スーパーカテゴリーの編集（どれも新しい ViewConfig を返す） ----
+// ---- 編集（どれも新しい配列を返す）----
+// 内部では「カテゴリーの並び」と「各行がどのグループに属するか」に分けて考え、最後にグループへ組み直す
 
-/** category を superId のスーパーカテゴリーに入れる。null なら外す。1つのカテゴリーは1つにしか入らない */
-export function assignSuper(view: ViewConfig, category: string, superId: string | null): ViewConfig {
-  return {
-    ...view,
-    superCategories: view.superCategories.map((s) => {
-      const members = s.members.filter((m) => m !== category)
-      return { ...s, members: s.id === superId ? [...members, category] : members }
-    }),
+type Meta = Pick<CategoryGroup, 'label' | 'color'>
+
+function toRows(groups: CategoryGroup[]) {
+  const cats: string[] = []
+  const owners: string[] = []
+  const meta = new Map<string, Meta>()
+  for (const g of groups) {
+    meta.set(g.id, { label: g.label, color: g.color })
+    for (const m of g.members) {
+      cats.push(m)
+      owners.push(g.id)
+    }
   }
+  return { cats, owners, meta }
 }
 
-export function createSuper(view: ViewConfig, id: string, label: string, firstMember?: string): ViewConfig {
-  const added = { ...view, superCategories: [...view.superCategories, { id, label, members: [] }] }
-  return firstMember ? assignSuper(added, firstMember, id) : added
+/** 同じグループが離れた場所に現れたら、後の方は新しいグループにする（連続していることを保つ） */
+function fromRows(cats: string[], owners: string[], meta: Map<string, Meta>, uid: IdGenerator): CategoryGroup[] {
+  const out: CategoryGroup[] = []
+  const used = new Set<string>()
+  for (let i = 0; i < cats.length; i++) {
+    const last = out[out.length - 1]
+    if (i > 0 && owners[i] === owners[i - 1]) {
+      last.members.push(cats[i])
+      continue
+    }
+    const id = used.has(owners[i]) ? uid() : owners[i]
+    used.add(id)
+    out.push({ id, ...(id === owners[i] ? meta.get(id) : {}), members: [cats[i]] })
+  }
+  return out.map((g) => {
+    const clean: CategoryGroup = { id: g.id, members: g.members }
+    if (g.label) clean.label = g.label
+    if (g.color) clean.color = g.color
+    return clean
+  })
 }
 
-export function deleteSuper(view: ViewConfig, id: string): ViewConfig {
-  return { ...view, superCategories: view.superCategories.filter((s) => s.id !== id) }
+/** index 番目のグループと、その次のグループを1つにする。名前と色は上のものを優先 */
+export function mergeWithNext(groups: CategoryGroup[], index: number): CategoryGroup[] {
+  const upper = groups[index]
+  const lower = groups[index + 1]
+  if (!upper || !lower) return groups
+  const merged: CategoryGroup = {
+    id: upper.id,
+    members: [...upper.members, ...lower.members],
+  }
+  // 1件だけのグループの名前は、まとめた後には合わないので引き継がない
+  const label = (upper.members.length > 1 && upper.label) || (lower.members.length > 1 && lower.label)
+  const color = upper.color || lower.color
+  if (label) merged.label = label
+  if (color) merged.color = color
+  return [...groups.slice(0, index), merged, ...groups.slice(index + 2)]
 }
 
-/** 名前を変える。色と並び順は表示名で覚えているので、新しい名前に引き継ぐ */
-export function renameSuper(view: ViewConfig, id: string, label: string): ViewConfig {
-  const target = view.superCategories.find((s) => s.id === id)
-  if (!target || !label) return view
-  const old = superLabel(target)
-  const colors = { ...view.colors }
-  if (old in colors) {
-    colors[label] = colors[old]
-    delete colors[old]
+/** カテゴリーをグループから切り離して1件だけのグループにする。途中なら前後に分かれる */
+export function detachCategory(groups: CategoryGroup[], category: string, uid: IdGenerator): CategoryGroup[] {
+  const { cats, owners, meta } = toRows(groups)
+  const i = cats.indexOf(category)
+  if (i < 0) return groups
+  const owner = owners[i]
+  if (owners.filter((o) => o === owner).length === 1) return groups
+  // 名前と色は、切り離すカテゴリーが先頭なら残りの側に、それ以外なら前の側に残す
+  const isFirst = i === 0 || owners[i - 1] !== owner
+  if (isFirst) {
+    owners[i] = uid()
+  } else {
+    owners[i] = uid()
+    const rest = uid()
+    for (let k = i + 1; k < cats.length && owners[k] === owner; k++) owners[k] = rest
   }
-  return {
-    ...view,
-    colors,
-    order: view.order.map((k) => (k === old ? label : k)),
-    superCategories: view.superCategories.map((s) => (s.id === id ? { ...s, label } : s)),
+  return fromRows(cats, owners, meta, uid)
+}
+
+/** グループを並びの start〜end 行目（両端を含む）に伸び縮みさせる。覆ったグループは吸収し、外れた行は1件ずつになる */
+export function resizeGroup(groups: CategoryGroup[], id: string, start: number, end: number, uid: IdGenerator): CategoryGroup[] {
+  const { cats, owners, meta } = toRows(groups)
+  if (!meta.has(id)) return groups
+  for (let k = 0; k < cats.length; k++) {
+    if (k >= start && k <= end) owners[k] = id
+    else if (owners[k] === id) owners[k] = uid()
   }
+  return fromRows(cats, owners, meta, uid)
+}
+
+/**
+ * カテゴリーを target の位置に動かす（上から下へなら target の後ろ、下から上へなら前）。
+ * 同じグループの間に入れたらそのグループに加わり、それ以外は1件だけのグループになる
+ */
+export function moveCategory(groups: CategoryGroup[], category: string, target: string, uid: IdGenerator): CategoryGroup[] {
+  const { cats, owners, meta } = toRows(groups)
+  const from = cats.indexOf(category)
+  const to = cats.indexOf(target)
+  if (from < 0 || to < 0 || from === to) return groups
+  const ownOwner = owners[from]
+  const wasAlone = owners.filter((o) => o === ownOwner).length === 1
+  cats.splice(from, 1)
+  owners.splice(from, 1)
+  cats.splice(to, 0, category)
+  owners.splice(to, 0, '')
+  const prev = owners[to - 1]
+  const next = owners[to + 1]
+  owners[to] = prev !== undefined && prev === next ? prev : wasAlone ? ownOwner : uid()
+  return fromRows(cats, owners, meta, uid)
+}
+
+export function updateGroup(groups: CategoryGroup[], id: string, patch: Partial<Meta>): CategoryGroup[] {
+  return groups.map((g) => {
+    if (g.id !== id) return g
+    const next = { ...g, ...patch }
+    if (!next.label) delete next.label
+    if (!next.color) delete next.color
+    return next
+  })
+}
+
+/** グループのまとめを解いて、中身を1件ずつにする */
+export function ungroup(groups: CategoryGroup[], id: string, uid: IdGenerator): CategoryGroup[] {
+  return groups.flatMap((g) => (g.id === id ? g.members.map((m, i) => (i === 0 ? { id: g.id, members: [m] } : { id: uid(), members: [m] })) : [g]))
+}
+
+/** グループを合計の多い順に、グループの中もカテゴリーの合計の多い順に並べる（まとめは保つ） */
+export function sortByTotal(groups: CategoryGroup[], totals: Map<string, number>): CategoryGroup[] {
+  const t = (c: string) => totals.get(c) ?? 0
+  return groups
+    .map((g) => ({ ...g, members: [...g.members].sort((a, b) => t(b) - t(a)) }))
+    .sort((a, b) => b.members.reduce((s, m) => s + t(m), 0) - a.members.reduce((s, m) => s + t(m), 0))
+}
+
+/** グラフに出す系列。まとめる設定ならグループ単位、そうでなければカテゴリー単位（どちらも表の順） */
+export interface DisplaySeries {
+  key: string
+  label: string
+  /** 未設定なら灰色 */
+  color?: string
+  members: string[]
+}
+
+export function displaySeries(groups: CategoryGroup[], view: Pick<ViewConfig, 'useSuperCategories' | 'colors'>): DisplaySeries[] {
+  if (!view.useSuperCategories) {
+    return flatten(groups).map((c) => ({ key: c, label: c, color: view.colors[c], members: [c] }))
+  }
+  return groups.map((g) => ({
+    key: g.id,
+    label: groupLabel(g),
+    color: g.color ?? (g.members.length === 1 ? view.colors[g.members[0]] : undefined),
+    members: g.members,
+  }))
+}
+
+/** 今どこかに設定されている色（色を選ぶときの候補） */
+export function colorsInUse(view: ViewConfig): string[] {
+  const all = [...Object.values(view.colors), ...view.groups.map((g) => g.color).filter((c): c is string => Boolean(c))]
+  return [...new Set(all.map((c) => c.toLowerCase()))]
 }

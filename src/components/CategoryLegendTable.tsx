@@ -1,94 +1,205 @@
-import { Fragment, useState } from 'react'
+import { useRef, useState } from 'react'
 import type { RawCategoryStat } from '../domain/raw'
-import { moveKey, type SuperCategory } from '../domain/view'
+import {
+  detachCategory,
+  groupLabel,
+  mergeWithNext,
+  moveCategory,
+  resizeGroup,
+  ungroup,
+  updateGroup,
+  type CategoryGroup,
+  type IdGenerator,
+} from '../domain/view'
 import { ColorInput } from './ColorInput'
 import { yen } from './format'
-import { SuperCategorySelect } from './SuperCategorySelect'
+import { Popover } from './Popover'
 
-export interface LegendItem {
-  /** 表示名（カテゴリー名またはスーパーカテゴリー名） */
-  key: string
-  color: string
+export interface LegendRow {
+  category: string
   stat: RawCategoryStat
-  /** スーパーカテゴリーとしてまとめて表示している場合の中身 */
-  members?: RawCategoryStat[]
-}
-
-export interface SuperHandlers {
-  superCategories: SuperCategory[]
-  superIdOf: (category: string) => string | null
-  onSelect: (category: string, superId: string | null) => void
-  onCreate: (category: string, label: string) => void
-  onRename: (superId: string, label: string) => void
-  onDelete: (superId: string) => void
+  /** 未設定なら灰色 */
+  color?: string
 }
 
 interface Props {
-  items: LegendItem[]
-  onReorder: (moving: string, target: string) => void
-  onColorChange: (key: string, color: string) => void
-  supers: SuperHandlers
+  /** 表の行。groups の中身を順に並べたものと一致している前提 */
+  rows: LegendRow[]
+  groups: CategoryGroup[]
+  onGroupsChange: (groups: CategoryGroup[]) => void
+  onColorChange: (category: string, color: string | undefined) => void
+  /** 色が未設定のときの色 */
+  gray: string
+  uid: IdGenerator
 }
 
 /** 最初に見せる行数。残りはフェードアウトさせて「すべて表示」で開く */
 const VISIBLE = 8
 const FADE_ROWS = 2
 
-/** グラフの凡例を兼ねるカテゴリー別の表。行のつまみをドラッグして並べ替えると、グラフの順番も変わる */
-export function CategoryLegendTable({ items, onReorder, onColorChange, supers }: Props) {
+/** ドラッグ中のプレビューで同じIDが振られるよう、ドラッグごとに決まった順でIDを作る */
+const seqUid = (prefix: string): IdGenerator => {
+  let n = 0
+  return () => `${prefix}-${n++}`
+}
+
+interface ResizeDrag {
+  id: string
+  start: number
+  end: number
+  edge: 'top' | 'bottom' | 'both'
+  origin: CategoryGroup[]
+  prefix: string
+}
+
+/**
+ * グラフの凡例を兼ねるカテゴリー別の表。
+ * 左のつまみで行を並べ替え、右のバーでスーパーカテゴリー（連続した行のまとめ）を作る
+ */
+export function CategoryLegendTable({ rows, groups, onGroupsChange, onColorChange, gray, uid }: Props) {
   const [expanded, setExpanded] = useState(false)
+  // 行の並べ替え
   const [armed, setArmed] = useState<string>()
   const [dragging, setDragging] = useState<string>()
   const [over, setOver] = useState<string>()
+  // バーの伸び縮み
+  const resize = useRef<ResizeDrag | null>(null)
+  const [preview, setPreview] = useState<CategoryGroup[] | null>(null)
 
-  const keys = items.map((i) => i.key)
-  const hidden = expanded ? 0 : Math.max(0, items.length - VISIBLE)
-  const shown = expanded ? items : items.slice(0, VISIBLE + FADE_ROWS)
+  const shownGroups = preview ?? groups
+  const groupIndexOf = new Map<string, number>()
+  shownGroups.forEach((g, gi) => g.members.forEach((m) => groupIndexOf.set(m, gi)))
 
-  const dropClass = (key: string) => {
-    if (!dragging || over !== key || dragging === key) return ''
-    return keys.indexOf(dragging) < keys.indexOf(key) ? 'drop-after' : 'drop-before'
+  const categories = rows.map((r) => r.category)
+  const hidden = expanded ? 0 : Math.max(0, rows.length - VISIBLE)
+  const shown = expanded ? rows : rows.slice(0, VISIBLE + FADE_ROWS)
+
+  const dropClass = (category: string) => {
+    if (!dragging || over !== category || dragging === category) return ''
+    return categories.indexOf(dragging) < categories.indexOf(category) ? 'drop-after' : 'drop-before'
   }
   const fadeClass = (i: number) => (!expanded && i >= VISIBLE ? `fade fade-${i - VISIBLE + 1}` : '')
-  const endDrag = () => {
+  const endRowDrag = () => {
     setArmed(undefined)
     setDragging(undefined)
     setOver(undefined)
   }
 
-  const dropHandlers = (key: string) => ({
-    onDragOver: (e: React.DragEvent) => {
-      if (!dragging) return
-      e.preventDefault()
-      setOver(key)
-    },
-    onDrop: (e: React.DragEvent) => {
-      e.preventDefault()
-      if (dragging && moveKey(keys, dragging, key) !== keys) onReorder(dragging, key)
-      endDrag()
-    },
-  })
+  const rowIndexAt = (x: number, y: number) => {
+    const tr = document.elementFromPoint(x, y)?.closest('tr[data-index]')
+    return tr ? Number(tr.getAttribute('data-index')) : null
+  }
 
-  const superCell = (category: string) => (
-    <SuperCategorySelect
-      superCategories={supers.superCategories}
-      value={supers.superIdOf(category)}
-      onSelect={(id) => supers.onSelect(category, id)}
-      onCreate={(label) => supers.onCreate(category, label)}
-      onRename={supers.onRename}
-      onDelete={supers.onDelete}
-    />
-  )
+  const startResize = (e: React.PointerEvent, rowIndex: number) => {
+    if ((e.target as HTMLElement).closest('button, input, label, .popover')) return
+    const g = shownGroups[groupIndexOf.get(categories[rowIndex])!]
+    const start = categories.indexOf(g.members[0])
+    const end = start + g.members.length - 1
+    const edge = start === end ? 'both' : rowIndex === start ? 'top' : rowIndex === end ? 'bottom' : null
+    if (!edge) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    resize.current = { id: g.id, start, end, edge, origin: groups, prefix: uid() }
+  }
 
-  const numbers = (s: RawCategoryStat) => (
-    <>
-      <td className="num">{s.count}</td>
-      <td className="num">{yen(s.total)}</td>
-      <td className="num">{(s.share * 100).toFixed(1)}%</td>
-      <td className="num">{yen(s.monthlyMean)}</td>
-      <td className="num">{yen(s.monthlyMedian)}</td>
-    </>
-  )
+  const moveResize = (e: React.PointerEvent) => {
+    const d = resize.current
+    if (!d) return
+    const t = rowIndexAt(e.clientX, e.clientY)
+    if (t === null) return
+    let [a, b] = [d.start, d.end]
+    if (d.edge === 'bottom' || (d.edge === 'both' && t > d.start)) b = Math.max(t, d.start)
+    if (d.edge === 'top' || (d.edge === 'both' && t < d.start)) a = Math.min(t, d.end)
+    setPreview(a === d.start && b === d.end ? null : resizeGroup(d.origin, d.id, a, b, seqUid(d.prefix)))
+  }
+
+  const endResize = () => {
+    if (preview) onGroupsChange(preview)
+    resize.current = null
+    setPreview(null)
+  }
+
+  const superCell = (category: string, rowIndex: number) => {
+    const gi = groupIndexOf.get(category)!
+    const g = shownGroups[gi]
+    const first = g.members[0] === category
+    const last = g.members[g.members.length - 1] === category
+    const color = g.color
+    const style = color ? { background: `color-mix(in srgb, ${color} 30%, transparent)`, borderColor: color } : undefined
+    return (
+      <td className="super-cell">
+        <div
+          className={`seg ${first ? '' : 'join-up'} ${last ? '' : 'join-down'} ${color ? '' : 'plain'}`}
+          style={style}
+          title={first && last ? 'ドラッグで上下のカテゴリーとまとめる' : '端をドラッグして範囲を変える'}
+          onPointerDown={(e) => startResize(e, rowIndex)}
+          onPointerMove={moveResize}
+          onPointerUp={endResize}
+          onPointerCancel={() => {
+            resize.current = null
+            setPreview(null)
+          }}
+        >
+          {first && (
+            <Popover
+              className="seg-label"
+              trigger={(toggle) => (
+                <button className={g.label || g.members.length > 1 ? '' : 'muted'} onClick={toggle}>
+                  {groupLabel(g)}
+                </button>
+              )}
+            >
+              {(close) => (
+                <div className="group-editor">
+                  <label>
+                    名前
+                    <input
+                      autoFocus
+                      value={g.label ?? ''}
+                      placeholder={g.members.join('・')}
+                      onChange={(e) => onGroupsChange(updateGroup(groups, g.id, { label: e.target.value }))}
+                      onKeyDown={(e) => e.key === 'Enter' && close()}
+                    />
+                  </label>
+                  <label>
+                    色
+                    <ColorInput value={color ?? gray} onChange={(c) => onGroupsChange(updateGroup(groups, g.id, { color: c }))} />
+                    {color && <button onClick={() => onGroupsChange(updateGroup(groups, g.id, { color: undefined }))}>色を消す</button>}
+                  </label>
+                  {g.members.length > 1 && (
+                    <button
+                      onClick={() => {
+                        onGroupsChange(ungroup(groups, g.id, uid))
+                        close()
+                      }}
+                    >
+                      まとめを解除
+                    </button>
+                  )}
+                </div>
+              )}
+            </Popover>
+          )}
+          <span className="seg-actions">
+            {first && gi > 0 && (
+              <button title="上とまとめる" onClick={() => onGroupsChange(mergeWithNext(groups, gi - 1))}>
+                ↑
+              </button>
+            )}
+            {last && gi < shownGroups.length - 1 && (
+              <button title="下とまとめる" onClick={() => onGroupsChange(mergeWithNext(groups, gi))}>
+                ↓
+              </button>
+            )}
+            {g.members.length > 1 && (
+              <button title="このカテゴリーを切り離す" onClick={() => onGroupsChange(detachCategory(groups, category, uid))}>
+                ✂
+              </button>
+            )}
+          </span>
+        </div>
+      </td>
+    )
+  }
 
   return (
     <div className="legend-table">
@@ -106,47 +217,57 @@ export function CategoryLegendTable({ items, onReorder, onColorChange, supers }:
           </tr>
         </thead>
         <tbody>
-          {shown.map((item, i) => (
-            <Fragment key={item.key}>
-              <tr
-                className={`${dropClass(item.key)} ${fadeClass(i)} ${dragging === item.key ? 'dragging' : ''}`}
-                draggable={armed === item.key}
-                onDragStart={(e) => {
-                  e.dataTransfer.effectAllowed = 'move'
-                  e.dataTransfer.setData('text/plain', item.key)
-                  setDragging(item.key)
-                }}
-                onDragEnd={endDrag}
-                {...dropHandlers(item.key)}
+          {shown.map((row, i) => (
+            <tr
+              key={row.category}
+              data-index={i}
+              className={`${dropClass(row.category)} ${fadeClass(i)} ${dragging === row.category ? 'dragging' : ''}`}
+              draggable={armed === row.category}
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', row.category)
+                setDragging(row.category)
+              }}
+              onDragEnd={endRowDrag}
+              onDragOver={(e) => {
+                if (!dragging) return
+                e.preventDefault()
+                setOver(row.category)
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (dragging && dragging !== row.category) onGroupsChange(moveCategory(groups, dragging, row.category, uid))
+                endRowDrag()
+              }}
+            >
+              <td
+                className="handle"
+                title="ドラッグして並べ替え"
+                onMouseDown={() => setArmed(row.category)}
+                onMouseUp={() => setArmed(undefined)}
               >
-                <td
-                  className="handle"
-                  title="ドラッグして並べ替え"
-                  onMouseDown={() => setArmed(item.key)}
-                  onMouseUp={() => setArmed(undefined)}
-                >
-                  ⋮⋮
-                </td>
-                <td>
-                  <ColorInput value={item.color} onChange={(c) => onColorChange(item.key, c)} title={`${item.key}の色を変える`} />
-                  {item.members ? <strong>{item.key}</strong> : item.key || '（空欄）'}
-                </td>
-                {numbers(item.stat)}
-                <td>{item.members ? <span className="muted small">{item.members.length}件をまとめて表示</span> : superCell(item.key)}</td>
-              </tr>
-              {item.members?.map((m) => (
-                <tr key={m.category} className={`member ${fadeClass(i)}`} {...dropHandlers(item.key)}>
-                  <td />
-                  <td className="member-name">{m.category}</td>
-                  {numbers(m)}
-                  <td>{superCell(m.category)}</td>
-                </tr>
-              ))}
-            </Fragment>
+                ⋮⋮
+              </td>
+              <td className="category-cell">
+                <ColorInput value={row.color ?? gray} onChange={(c) => onColorChange(row.category, c)} title={`${row.category}の色を変える`} />
+                {row.category || '（空欄）'}
+                {row.color && (
+                  <button className="clear-color" title="色を消す" onClick={() => onColorChange(row.category, undefined)}>
+                    ×
+                  </button>
+                )}
+              </td>
+              <td className="num">{row.stat.count}</td>
+              <td className="num">{yen(row.stat.total)}</td>
+              <td className="num">{(row.stat.share * 100).toFixed(1)}%</td>
+              <td className="num">{yen(row.stat.monthlyMean)}</td>
+              <td className="num">{yen(row.stat.monthlyMedian)}</td>
+              {superCell(row.category, i)}
+            </tr>
           ))}
         </tbody>
       </table>
-      {items.length > VISIBLE && (
+      {rows.length > VISIBLE && (
         <button className="expand" onClick={() => setExpanded((v) => !v)}>
           {expanded ? '∧ 閉じる' : `∨ すべて表示（残り${hidden}件）`}
         </button>

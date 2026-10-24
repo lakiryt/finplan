@@ -1,26 +1,13 @@
 import { useMemo } from 'react'
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
-import { expenseRanking, rawExpenseByCategory, rawMonthlyRows } from '../domain/raw'
+import { expenseRanking, rawExpenseByCategory, rawMonthlyRows, type RawCategoryStat } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
-import {
-  applyDisplayNames,
-  assignColors,
-  assignSuper,
-  createSuper,
-  deleteSuper,
-  moveKey,
-  orderKeys,
-  parseViewConfig,
-  renameSuper,
-  superLabel,
-  superOf,
-  type ViewConfig,
-} from '../domain/view'
-import { initialView } from '../config/initial'
+import { colorsInUse, displaySeries, flatten, parseViewConfig, reconcileGroups, sortByTotal, type ViewConfig } from '../domain/view'
 import { useStoredState } from '../state/storage'
-import { CategoryLegendTable, type LegendItem } from './CategoryLegendTable'
+import { CategoryLegendTable, type LegendRow } from './CategoryLegendTable'
 import { PaletteList } from './ColorInput'
 import { ExpensePie } from './ExpensePie'
 import { man, yen } from './format'
@@ -33,54 +20,50 @@ interface Props {
   to: string
 }
 
+const uid = () => crypto.randomUUID()
+
 /** 加工なしの概要。CSVのカテゴリーと金額の符号だけで集計する（スーパーカテゴリーは表示上のまとめ） */
 export function RawOverview({ transactions, from, to }: Props) {
   const theme = useChartTheme()
   const [view, setView] = useStoredState<ViewConfig>('finplan.view', initialView, parseViewConfig)
 
-  const displayed = useMemo(() => applyDisplayNames(transactions, view), [transactions, view])
-  const inPeriod = useMemo(() => filterByMonths(displayed, from, to), [displayed, from, to])
+  const inPeriod = useMemo(() => filterByMonths(transactions, from, to), [transactions, from, to])
   const rows = useMemo(() => rawMonthlyRows(inPeriod, from, to), [inPeriod, from, to])
-  const stats = useMemo(() => rawExpenseByCategory(inPeriod, rows), [inPeriod, rows])
+  const stats = useMemo(() => new Map(rawExpenseByCategory(inPeriod, rows).map((s) => [s.category, s])), [inPeriod, rows])
   const expense = seriesStats(rows.map((r) => r.expense))
   const income = seriesStats(rows.map((r) => r.income))
 
-  // スーパーカテゴリーの中身の内訳用（まとめる前のカテゴリーで集計）
-  const memberStats = useMemo(() => {
-    const txs = filterByMonths(transactions, from, to)
-    return rawExpenseByCategory(txs, rawMonthlyRows(txs, from, to))
-  }, [transactions, from, to])
+  // 表の行は、全データで支出のあるカテゴリーすべて（期間を変えても表が動かないように）
+  const ranking = useMemo(() => expenseRanking(transactions), [transactions])
+  const groups = useMemo(() => reconcileGroups(view.groups, ranking), [view.groups, ranking])
+  const zero = (category: string): RawCategoryStat => ({ category, count: 0, total: 0, monthlyMean: 0, monthlyMedian: 0, share: 0 })
+  const legendRows: LegendRow[] = flatten(groups).map((c) => ({ category: c, stat: stats.get(c) ?? zero(c), color: view.colors[c] }))
 
-  // 並び順と色は全データで決める（期間を変えても変わらないように）
-  const allKeys = useMemo(() => {
-    const ranking = expenseRanking(displayed)
-    return orderKeys(ranking, view.order, ranking)
-  }, [displayed, view.order])
-  const colors = useMemo(
-    () => assignColors(allKeys, view.colors, theme.series, theme.other),
-    [allKeys, view.colors, theme.series, theme.other],
-  )
-
-  const items: LegendItem[] = allKeys.flatMap((key) => {
-    const stat = stats.find((s) => s.category === key)
-    if (!stat) return []
-    const sc = view.useSuperCategories ? view.superCategories.find((s) => superLabel(s) === key) : undefined
-    const members = sc && memberStats.filter((m) => sc.members.includes(m.category))
-    return [{ key, color: colors[key], stat, members: members?.length ? members : undefined }]
-  })
-
+  const series = displaySeries(groups, view)
+    .map((s) => ({ ...s, color: s.color ?? theme.other, total: s.members.reduce((sum, m) => sum + (stats.get(m)?.total ?? 0), 0) }))
+    .filter((s) => s.total > 0)
   const barData = rows.map((r) => {
-    // 0 の項目はツールチップに出さない
+    // 0 の系列はツールチップに出さない
     const d: Record<string, number | string | undefined> = { month: r.month }
-    for (const { key } of items) d[key] = r.expenseByCategory[key] || undefined
+    series.forEach((s, i) => (d[`s${i}`] = s.members.reduce((sum, m) => sum + (r.expenseByCategory[m] ?? 0), 0) || undefined))
     return d
   })
 
-  const setColor = (key: string, color: string) => setView({ ...view, colors: { ...view.colors, [key]: color } })
+  const setColor = (category: string, color: string | undefined) => {
+    const colors = { ...view.colors }
+    if (color) colors[category] = color
+    else delete colors[category]
+    setView({ ...view, colors })
+  }
+  const totals = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const t of transactions) if (t.amount < 0) m.set(t.category, (m.get(t.category) ?? 0) - t.amount)
+    return m
+  }, [transactions])
 
   return (
     <div>
-      <PaletteList colors={theme.series} />
+      <PaletteList colors={colorsInUse(view)} />
       <p className="muted small">
         CSVの記録をそのまま集計しています（マイナスを支出、プラスを収入として合計）。家賃・貯金・口座移動なども含まれます。
       </p>
@@ -97,7 +80,7 @@ export function RawOverview({ transactions, from, to }: Props) {
         <div>
           <h3>支出のカテゴリー別の割合</h3>
           <ExpensePie
-            slices={items.map((i) => ({ key: i.key, label: i.key, value: i.stat.total, color: i.color }))}
+            slices={series.map((s) => ({ key: s.key, label: s.label, value: s.total, color: s.color }))}
             surface={theme.surface}
             ink={theme.ink}
             grid={theme.grid}
@@ -111,20 +94,21 @@ export function RawOverview({ transactions, from, to }: Props) {
               <XAxis dataKey="month" stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} />
               <YAxis tickFormatter={man} stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} axisLine={false} width={48} />
               <Tooltip
-                formatter={(v, key) => [yen(Number(v)), key]}
+                formatter={(v, name) => [yen(Number(v)), name]}
                 itemSorter={(item) => -Number(item.value)}
                 contentStyle={{ background: theme.surface, borderColor: theme.grid, color: theme.ink }}
                 cursor={{ fill: theme.grid, opacity: 0.5 }}
               />
-              {items.map(({ key, color }, i) => (
+              {series.map((s, i) => (
                 <Bar
-                  key={key}
-                  dataKey={key}
+                  key={s.key}
+                  dataKey={`s${i}`}
+                  name={s.label}
                   stackId="a"
-                  fill={color}
+                  fill={s.color}
                   stroke={theme.surface}
                   strokeWidth={1}
-                  radius={i === items.length - 1 ? [4, 4, 0, 0] : 0}
+                  radius={i === series.length - 1 ? [4, 4, 0, 0] : 0}
                   maxBarSize={28}
                   isAnimationActive={false}
                 />
@@ -153,32 +137,27 @@ export function RawOverview({ transactions, from, to }: Props) {
             checked={view.useSuperCategories}
             onChange={(e) => setView({ ...view, useSuperCategories: e.target.checked })}
           />
-          スーパーカテゴリーでまとめる
+          グラフをスーパーカテゴリーでまとめる
         </label>
         <span className="muted small">
-          表の順番がグラフの順番（棒グラフは下から）です。つまみ（⋮⋮）をドラッグして並べ替え、色見本を押すと色を変えられます。
-          上から{theme.series.length}件に色が付き、残りは灰色になります。
+          表の順番がグラフの順番（棒グラフは下から）です。左のつまみ（⋮⋮）で並べ替え、右のバーの端をドラッグするか ↑↓ でスーパーカテゴリーにまとめます。
         </span>
       </div>
       <CategoryLegendTable
-        items={items}
-        onReorder={(moving, target) => setView({ ...view, order: moveKey(allKeys, moving, target) })}
+        rows={legendRows}
+        groups={groups}
+        onGroupsChange={(g) => setView({ ...view, groups: g })}
         onColorChange={setColor}
-        supers={{
-          superCategories: view.superCategories,
-          superIdOf: (c) => superOf(view, c)?.id ?? null,
-          onSelect: (c, id) => setView(assignSuper(view, c, id)),
-          onCreate: (c, label) => setView(createSuper(view, crypto.randomUUID(), label, c)),
-          onRename: (id, label) => setView(renameSuper(view, id, label)),
-          onDelete: (id) => setView(deleteSuper(view, id)),
-        }}
+        gray={theme.other}
+        uid={uid}
       />
       <div className="row">
-        <button onClick={() => setView({ ...view, order: [] })} disabled={!view.order.length}>
-          並び順を初期に戻す（支出の多い順）
-        </button>
-        <button onClick={() => setView({ ...view, colors: {} })} disabled={!Object.keys(view.colors).length}>
-          色を初期に戻す
+        <button onClick={() => setView({ ...view, groups: sortByTotal(groups, totals) })}>多い順に並べ替える</button>
+        <button
+          onClick={() => setView({ ...view, colors: {}, groups: groups.map(({ id, label, members }) => ({ id, label, members })) })}
+          disabled={!colorsInUse(view).length}
+        >
+          色をすべて消す
         </button>
         <button onClick={() => confirm('表示の設定（色・並び順・スーパーカテゴリー）を初期状態に戻しますか？') && setView(initialView)}>
           表示の設定をすべて初期に戻す
