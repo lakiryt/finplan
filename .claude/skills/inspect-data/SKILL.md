@@ -17,7 +17,7 @@ npm run inspect -- csv/<file>.csv --from 2023-10 --to 2026-09
 npm run inspect -- csv/<file>.csv --category 家賃
 npm run inspect -- csv/<file>.csv --memo ホテル --from 2025-01
 
-# 書き出した設定ファイルで集計する（既定は src/config/default-config.json）
+# 書き出した設定ファイルで集計する（既定は src/config/local/default-config.json、無ければ src/config/default-config.json）
 npm run inspect -- csv/<file>.csv --config path/to/finplan-config.json
 ```
 

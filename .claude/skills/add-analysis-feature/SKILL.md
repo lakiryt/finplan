@@ -20,7 +20,8 @@ finplan では「このカテゴリーはこう扱う」をコードに書かな
 | | `groupId` | グループを変える（役割 `ignore` のグループに入れれば除外） |
 | | `amortizeMonths` | 取引月から N か月に均等に割って計上する |
 
-足りるなら、コードは変えずに `src/config/default-config.json` にルールを足す（または画面で足すよう利用者に提案する）。
+足りるなら、コードは変えずに `src/config/local/default-config.json`（個人の設定、Gitの管理対象外）にルールを足す（または画面で足すよう利用者に提案する）。
+`src/config/default-config.json` はコミットされるので、利用者のカテゴリー名やメモに基づくルールは書かない。
 対象の取引は `npm run inspect -- csv/<file>.csv --category <名前>` などで先に確認する（`inspect-data` スキル）。
 
 ## 2. 足りない場合は汎用的な部品として足す
