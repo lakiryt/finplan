@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import type { RawCategoryStat } from '../domain/raw'
+import type { RawCategoryStat } from '../../domain/raw'
 import {
   detachCategory,
   groupLabel,
@@ -10,10 +10,10 @@ import {
   updateGroup,
   type CategoryGroup,
   type IdGenerator,
-} from '../domain/groups'
-import { ColorPanel, ColorPicker } from './ColorPicker'
-import { yen } from './format'
-import { Popover } from './Popover'
+} from '../../domain/groups'
+import { ColorPanel, ColorPicker } from '../ColorPicker'
+import { yen } from '../format'
+import { Popover } from '../Popover'
 import { createPullBus } from './pullBus'
 import { ROW_EASING, ROW_MS, SuperBlobs, type BlobLayout } from './SuperBlobs'
 

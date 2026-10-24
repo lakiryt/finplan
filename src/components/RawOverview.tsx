@@ -19,7 +19,7 @@ import {
 } from '../domain/view'
 import { downloadJson, useStoredState } from '../state/storage'
 import { useUndoable } from '../state/undo'
-import { CategoryLegendTable, type LegendRow } from './CategoryLegendTable'
+import { CategoryLegendTable, type LegendRow } from './legend/CategoryLegendTable'
 import { yen } from './format'
 import { useChartTheme } from './palette'
 import { RawCharts } from './RawCharts'

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { CategoryGroup } from '../domain/groups'
+import type { CategoryGroup } from '../../domain/groups'
 import type { PullBus } from './pullBus'
 
 /*
