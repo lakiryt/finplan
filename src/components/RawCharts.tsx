@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, type TooltipContentProps } from 'recharts'
 import { ExpensePie } from './ExpensePie'
 import { man, yen } from './format'
@@ -25,6 +25,23 @@ interface Props {
  * 呼ぶ側は series と barData を useMemo で作ること
  */
 export const RawCharts = memo(function RawCharts({ series, barData, mean, median, theme }: Props) {
+  // 詳細を出している月。同じ棒をもう一度押す・グラフの外を押す・Esc で閉じる
+  const [selected, setSelected] = useState<string | null>(null)
+  const barRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (selected === null) return
+    const onDown = (e: MouseEvent) => {
+      if (!barRef.current?.contains(e.target as Node)) setSelected(null)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelected(null)
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [selected])
+
   return (
     <div className="charts">
       <div>
@@ -36,15 +53,22 @@ export const RawCharts = memo(function RawCharts({ series, barData, mean, median
           grid={theme.grid}
         />
       </div>
-      <div>
+      <div ref={barRef}>
         <h3>月ごとの支出</h3>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={barData} margin={{ top: 16, right: 8, bottom: 0, left: 0 }}>
+          <BarChart
+            data={barData}
+            margin={{ top: 16, right: 8, bottom: 0, left: 0 }}
+            onClick={({ activeTooltipIndex }) => {
+              const key = activeTooltipIndex === undefined || activeTooltipIndex === null ? null : String(activeTooltipIndex)
+              setSelected((cur) => (key === null || cur === key ? null : key))
+            }}
+          >
             <CartesianGrid vertical={false} stroke={theme.grid} />
             <XAxis dataKey="month" stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} />
             <YAxis tickFormatter={man} stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} axisLine={false} width={48} />
-            {/* 棒を押すと詳細が出て、そのまま残る */}
-            <Tooltip trigger="click" content={MonthDetail} cursor={{ fill: theme.grid, opacity: 0.5 }} />
+            {/* 棒を押すと詳細が出て、閉じるまで残る */}
+            <Tooltip trigger="click" active={selected !== null} content={MonthDetail} cursor={{ fill: theme.grid, opacity: 0.5 }} />
             {series.map((s, i) => (
               <Bar
                 key={s.key}
