@@ -1,8 +1,5 @@
 {
-  "version": 1,
-  "modules": [
-    { "id": "real-income", "type": "excludeIncome", "enabled": false, "categories": [] },
-    { "id": "real-expense", "type": "excludeExpense", "enabled": false, "categories": [] },
-    { "id": "offset", "type": "offset", "enabled": false, "pairs": [] }
-  ]
+  "version": 2,
+  "exclude": { "enabled": false, "rules": [] },
+  "offset": { "enabled": false, "rules": [] }
 }

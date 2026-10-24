@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
 import { flatten, reconcileGroups, sortByTotal } from '../domain/groups'
-import { applyProcessing, excludedCategories, hasActiveModule, isProcessed, offsetTargets, opposite, UNASSIGNED_OFFSET, type ProcessingConfig } from '../domain/processing'
+import { applyProcessing, isProcessed, isStepActive, processedAmounts, UNASSIGNED_OFFSET, type ProcessingConfig } from '../domain/processing'
 import { categoryTotals, emptyCategoryStat, rankByTotal, rawCategoryStats, rawMonthlyRows, type RawMonth, type Side } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
@@ -68,8 +68,6 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
   const side: Side = mode === 'income' ? 'income' : 'expense'
 
   const processed = useMemo(() => applyProcessing(transactions, processing), [transactions, processing])
-  const excluded = useMemo(() => excludedCategories(processing), [processing])
-  const offsets = useMemo(() => offsetTargets(processing), [processing])
   // 3. の加工がかかっている側は「加工後」と出す（実収入・実支出は、移動だけを除いた場合の家計調査の言葉なのでとっておく）
   const labels: Record<Mode, string> = {
     expense: isProcessed(processing, 'expense') ? '支出（加工後）' : '支出',
@@ -104,10 +102,12 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
   const edit = (next: ViewConfig) => setView(fromSide(view, side, next))
 
   /** 3. の加工でこの行に起きていること（行を薄くして添える） */
+  // 条件はカテゴリーより細かく指定できるので、この期間に実際に除外・相殺した金額を添える
+  const amounts = useMemo(() => processedAmounts(filterByMonths(transactions, from, to), processing), [transactions, from, to, processing])
   const processedNote = (c: string) => {
-    const target = offsets[side].get(c)
-    if (target) return target === UNASSIGNED_OFFSET ? `${sideName[opposite(side)]}全体から差し引き中` : `${target}から差し引き中`
-    return excluded[side].has(c) ? `${sideName[side]}から除外中` : undefined
+    const a = amounts[side].get(c)
+    if (!a) return undefined
+    return [a.excluded && `除外 −${yen(a.excluded)}`, a.offset && `相殺 −${yen(a.offset)}`].filter(Boolean).join('・')
   }
   const legendRows: LegendRow[] = flatten(groups).map((c) => ({
     category: c,
@@ -153,11 +153,7 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
     }
   }
 
-  const activeLabels = [
-    hasActiveModule(processing, 'excludeIncome') && '収入から除く',
-    hasActiveModule(processing, 'excludeExpense') && '支出から除く',
-    hasActiveModule(processing, 'offset') && '相殺',
-  ].filter(Boolean)
+  const activeLabels = [isStepActive(processing.exclude) && '除外', isStepActive(processing.offset) && '相殺'].filter(Boolean)
 
   return (
     <UndoSessionContext.Provider value={session}>
