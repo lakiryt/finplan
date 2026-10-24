@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
 import { flatten, reconcileGroups, sortByTotal } from '../domain/groups'
-import { applyProcessing, excludedCategories, hasActiveModule, offsetTargets, type ProcessingConfig } from '../domain/processing'
+import { applyProcessing, excludedCategories, hasActiveModule, offsetTargets, UNASSIGNED_OFFSET, type ProcessingConfig } from '../domain/processing'
 import { categoryTotals, emptyCategoryStat, rankByTotal, rawCategoryStats, rawMonthlyRows, type RawMonth, type Side } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
@@ -22,6 +22,7 @@ import {
 } from '../domain/view'
 import { useStoredState } from '../state/storage'
 import { UndoSessionContext, useUndoable } from '../state/undo'
+import { yen } from './format'
 import { JsonExportDialog } from './JsonExportDialog'
 import { CategoryLegendTable, type LegendRow } from './legend/CategoryLegendTable'
 import { useChartTheme } from './palette'
@@ -103,7 +104,8 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
   /** 3. の加工でこの行に起きていること（行を薄くして添える） */
   const processedNote = (c: string) => {
     if (side === 'expense') return excluded.expense.has(c) ? `${labels.expense}から除外中` : undefined
-    if (offsets.has(c)) return `${offsets.get(c)}から差し引き中`
+    const target = offsets.get(c)
+    if (target) return target === UNASSIGNED_OFFSET ? '支出全体から差し引き中' : `${target}から差し引き中`
     return excluded.income.has(c) ? `${labels.income}から除外中` : undefined
   }
   const legendRows: LegendRow[] = flatten(groups).map((c) => ({
@@ -114,13 +116,18 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
   }))
 
   // グラフは重いので、系列とデータは関係する値が変わったときだけ作り直す
-  const series = useMemo(
-    () =>
-      displaySeries(current)
-        .map((s) => ({ ...s, color: s.color ?? theme.other, total: s.members.reduce((sum, m) => sum + (stats.get(m)?.total ?? 0), 0) }))
-        .filter((s) => s.total > 0),
-    [current, stats, theme],
-  )
+  // 相殺で差し引いた分により期間合計がマイナスになる系列も残す（円グラフの内側の輪・棒グラフの0の下に出す）
+  const unassigned = side === 'expense' ? stats.get(UNASSIGNED_OFFSET) : undefined
+  const series = useMemo(() => {
+    const list = displaySeries(current).map((s) => ({
+      ...s,
+      color: s.color ?? theme.other,
+      total: s.members.reduce((sum, m) => sum + (stats.get(m)?.total ?? 0), 0),
+    }))
+    // 差し引く先を指定しない相殺は、どのカテゴリーにも属さない系列として最後に足す
+    if (unassigned?.total) list.push({ key: UNASSIGNED_OFFSET, label: UNASSIGNED_OFFSET, color: theme.other, members: [UNASSIGNED_OFFSET], total: unassigned.total })
+    return list.filter((s) => s.total !== 0)
+  }, [current, stats, theme, unassigned])
   const bars = useMemo<BarsSpec>(
     () =>
       mode === 'balance'
@@ -200,6 +207,11 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
                 表の順番がグラフの順番（棒グラフは下から）です。左のつまみ（⋮⋮）で並べ替え、右のバーの端をドラッグするか ↑↓ で大分類にまとめます。
               </span>
             </div>
+            {unassigned?.total ? (
+              <p className="muted small">
+                {UNASSIGNED_OFFSET}: 期間合計 {yen(unassigned.total)}（どのカテゴリーにも付けずに、支出全体から差し引いた分。グラフでは灰色）
+              </p>
+            ) : null}
             <CategoryLegendTable
               rows={legendRows}
               groups={groups}

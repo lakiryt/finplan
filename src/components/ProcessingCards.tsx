@@ -126,7 +126,7 @@ function OffsetCard({
 }) {
   const candidates = incomeCard?.categories ?? []
   const pairOf = new Map(m.pairs.map((p) => [p.from, p]))
-  const active = candidates.filter((c) => pairOf.get(c)?.enabled && pairOf.get(c)?.to)
+  const active = candidates.filter((c) => pairOf.get(c)?.enabled)
   const offsetTotal = active.reduce((s, c) => s + (totals.income.get(c) ?? 0), 0)
   const targets = rankByTotal(totals.expense)
   // チェックを外しても差し引く先は覚えておく（もう一度チェックしたときに戻る）
@@ -143,7 +143,9 @@ function OffsetCard({
       info={<OffsetInfo />}
       summary={`${active.length}件を支出から差し引く（全期間で${yen(offsetTotal)}）`}
     >
-      <p className="muted small">実収入から除いたもののうち、支出の打ち消しにあたるもの（割り勘の回収・返金・ポイントなど）にチェックを入れ、どの支出から差し引くかを選びます。</p>
+      <p className="muted small">
+        実収入から除いたもののうち、支出の打ち消しにあたるもの（割り勘の回収・返金・ポイントなど）にチェックを入れます。差し引く支出を選ぶと、その内訳から差し引きます（指定しなければ支出全体から）。
+      </p>
       {!incomeCard?.enabled && <p className="small warn-text">実収入のカードが無効なので、相殺も反映されません。</p>}
       {candidates.length === 0 ? (
         <p className="muted small">実収入のカードで除くカテゴリーを選ぶと、ここに並びます。</p>
@@ -157,8 +159,16 @@ function OffsetCard({
                 <input type="checkbox" checked={on} onChange={(e) => setPair(c, { enabled: e.target.checked })} aria-label={`${c}を支出から差し引く`} />
                 <span>{c || '（空欄）'}</span>
                 <span className="muted small num">{amountLabel(totals.income, c)}</span>
-                <select value={pair?.to ?? ''} disabled={!on} onChange={(e) => setPair(c, { to: e.target.value })} aria-label={`${c}を差し引く支出`}>
-                  <option value="">差し引く支出を選ぶ</option>
+                <select
+                  className={pair?.to ? '' : 'unset'}
+                  value={pair?.to ?? ''}
+                  disabled={!on}
+                  onChange={(e) => setPair(c, { to: e.target.value })}
+                  aria-label={`${c}を差し引く支出`}
+                  title={on ? '指定しないと、どのカテゴリーにも付けずに支出全体から差し引きます' : 'チェックを入れると選べます'}
+                >
+                  {/* 指定しないのも正しい選択肢（支出全体から差し引く）なので、警告の色にはせず灰色の文字にする */}
+                  <option value="">指定しない</option>
                   {targets.map((t) => (
                     <option key={t} value={t}>
                       {t}

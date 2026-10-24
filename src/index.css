@@ -189,6 +189,12 @@ button:disabled { opacity: 0.4; cursor: default; }
 .card-option { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 0.9rem; }
 .offset-option { grid-template-columns: auto 1fr auto minmax(0, 11em); }
 .offset-option select { min-width: 0; }
+/* 「指定しない」は灰色の文字（警告ではない）。選択肢の一覧の文字は通常の色に戻す */
+.offset-option select.unset { color: var(--muted); }
+.offset-option select option { color: var(--ink); }
+/* チェックしていない行の選択欄は、押せないことがはっきり分かるようにする */
+.offset-option select:disabled { opacity: 0.3; border-style: dashed; cursor: not-allowed; }
+.pie-note { margin: 0; text-align: center; }
 .warn-text { color: var(--ink-2); background: var(--warn-bg); border-radius: 6px; padding: 2px 8px; }
 .subsection { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 8px; }
 

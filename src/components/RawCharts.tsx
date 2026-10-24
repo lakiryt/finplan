@@ -78,15 +78,19 @@ export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, b
     )
   }
 
+  // 相殺で差し引いた分は、期間合計がマイナスの系列として来る。円グラフでは内側の輪、棒グラフでは0の線より下に出す
+  const toSlice = (s: ChartSeries) => ({ key: s.key, label: s.label, value: Math.abs(s.total), color: s.color })
+  const lastPositive = series.map((s) => s.total > 0).lastIndexOf(true)
+  const hasNegative = bars.data.some((d) => Object.entries(d).some(([k, v]) => k.startsWith('s') && typeof v === 'number' && v < 0))
+
   return (
     <div className="charts">
       <div>
         <h3>{pieTitle}</h3>
         <ExpensePie
-          slices={series.map((s) => ({ key: s.key, label: s.label, value: s.total, color: s.color }))}
+          slices={series.filter((s) => s.total > 0).map(toSlice)}
+          negatives={series.filter((s) => s.total < 0).map(toSlice)}
           surface={theme.surface}
-          ink={theme.ink}
-          grid={theme.grid}
         />
       </div>
       <MonthBarChart title={barTitle} data={bars.data} detail={MonthDetail} theme={theme}>
@@ -99,11 +103,12 @@ export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, b
             fill={s.color}
             stroke={theme.surface}
             strokeWidth={1}
-            radius={i === series.length - 1 ? [4, 4, 0, 0] : 0}
+            radius={i === lastPositive ? [4, 4, 0, 0] : 0}
             maxBarSize={28}
             isAnimationActive={false}
           />
         ))}
+        {hasNegative && <ReferenceLine y={0} stroke={theme.axis} />}
         {averages}
       </MonthBarChart>
     </div>
@@ -148,6 +153,8 @@ function MonthBarChart({
       <ResponsiveContainer width="100%" height={300}>
         <BarChart
           data={data}
+          // 積み上げでは、プラスは0から上へ、マイナスは0から下へ分けて積む（相殺で差し引いた分がほかの棒に重ならないように）
+          stackOffset="sign"
           margin={{ top: 16, right: 8, bottom: 0, left: 0 }}
           onClick={({ activeTooltipIndex }) => {
             const key = activeTooltipIndex === undefined || activeTooltipIndex === null ? null : String(activeTooltipIndex)
@@ -187,6 +194,7 @@ function AverageLines({ mean, median, theme }: { mean: number; median: number; t
 
 /**
  * 積み上げ棒を押したときの詳細。月と合計を上に出し、内訳は表と同じ順（表の上の行が先）に並べる。
+ * 相殺で差し引いた分（マイナス）も出すので、内訳の合計と月の合計が一致する。
  * 棒は表の順に下から積んでいるので、Recharts から渡る順（描いた順）がそのまま表の順になる
  */
 function MonthDetail({ active, payload, label }: TooltipContentProps) {
@@ -196,7 +204,7 @@ function MonthDetail({ active, payload, label }: TooltipContentProps) {
     <div className="chart-detail">
       <DetailHead label={label} value={total} />
       {payload
-        .filter((p) => Number(p.value) > 0)
+        .filter((p) => Number(p.value) !== 0)
         .map((p) => (
           <DetailRow key={String(p.dataKey)} color={p.color} name={String(p.name)} value={Number(p.value)} />
         ))}
