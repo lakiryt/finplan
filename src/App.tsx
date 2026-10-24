@@ -105,7 +105,10 @@ export default function App() {
 
           <section>
             <h2>3. 加工</h2>
-            <p className="muted small">カードを有効にすると、2. の集計に反映されます。</p>
+            <div className="row">
+              <span className="muted small">カードを有効にすると、2. の集計に反映されます。</span>
+              <button onClick={() => confirm('加工の設定を初期状態に戻しますか？') && setProcessing(initialProcessing)}>加工の設定を初期に戻す</button>
+            </div>
             <ProcessingCards config={processing} onChange={setProcessing} transactions={transactions} />
             <details open={unassignedCount > 0} className="subsection">
               <summary>
