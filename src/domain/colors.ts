@@ -108,3 +108,26 @@ function shuffle<T>(items: T[], random: Random): T[] {
   }
   return a
 }
+
+/**
+ * 色を選ぶときの基本の色。色の印象のくくりごとに代表を1つずつ置く。
+ * くくりは Berlin & Kay の基本色彩語（赤・オレンジ・茶・黄・緑・青・紫・ピンク・灰・黒）に、
+ * 日本語でよく区別する黄緑・水色を加えたもの。並びは色相環の順（暖色→寒色）で、最後に無彩色。
+ * 明るさ L と鮮やかさ C は、そのくくりらしく見えるよう色相ごとに決めている（黄は明るく、茶は暗く低彩度など）
+ */
+const BASIC_COLOR_SPECS: { name: string; l: number; c: number; h: number }[] = [
+  { name: '赤', l: 0.58, c: 0.2, h: 27 },
+  { name: 'オレンジ', l: 0.72, c: 0.17, h: 55 },
+  { name: '茶', l: 0.48, c: 0.08, h: 55 },
+  { name: '黄', l: 0.87, c: 0.17, h: 95 },
+  { name: '黄緑', l: 0.78, c: 0.18, h: 130 },
+  { name: '緑', l: 0.56, c: 0.14, h: 150 },
+  { name: '水色', l: 0.78, c: 0.11, h: 225 },
+  { name: '青', l: 0.53, c: 0.18, h: 262 },
+  { name: '紫', l: 0.52, c: 0.18, h: 305 },
+  { name: 'ピンク', l: 0.76, c: 0.13, h: 350 },
+  { name: '灰', l: 0.65, c: 0, h: 0 },
+  { name: '黒', l: 0.32, c: 0, h: 0 },
+]
+
+export const BASIC_COLORS: { name: string; hex: string }[] = BASIC_COLOR_SPECS.map(({ name, ...lch }) => ({ name, hex: oklchToHex(lch) }))

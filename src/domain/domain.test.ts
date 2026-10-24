@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { monthRange, monthlyRows } from './aggregate'
 import { addMonths, classify, splitAmount } from './classify'
-import { harmoniousShades, hexToOklch, oklchToHex, seededRandom } from './colors'
+import { BASIC_COLORS, harmoniousShades, hexToOklch, oklchToHex, seededRandom } from './colors'
 import { defaultConfig, parseConfig } from './config'
 import { parseCsv, parseDate } from './importers'
 import { expenseRanking, rawExpenseByCategory, rawMonthlyRows } from './raw'
@@ -319,5 +319,18 @@ describe('group colors', () => {
     expect(Object.keys(recolorMembers(colored, { A: '#000000' }, 'x', seededRandom(1)))).toEqual(['A', 'B', 'C'])
     const series = displaySeries(colored, { useSuperCategories: false, colors: { A: '#000000' } })
     expect(series.map((s) => s.color)).toEqual(['#000000', '#eb6834', '#eb6834', undefined])
+  })
+})
+
+describe('basic colors', () => {
+  it('has one representative per color impression, all distinct and valid', () => {
+    expect(BASIC_COLORS.map((c) => c.name)).toEqual(['赤', 'オレンジ', '茶', '黄', '黄緑', '緑', '水色', '青', '紫', 'ピンク', '灰', '黒'])
+    expect(new Set(BASIC_COLORS.map((c) => c.hex)).size).toBe(BASIC_COLORS.length)
+    for (const c of BASIC_COLORS) expect(c.hex).toMatch(/^#[0-9a-f]{6}$/)
+  })
+
+  it('gives a single-member group exactly the group color', () => {
+    const g: CategoryGroup[] = [{ id: 'x', color: '#123456', members: ['A'] }]
+    expect(recolorMembers(g, {}, 'x')).toEqual({ A: '#123456' })
   })
 })

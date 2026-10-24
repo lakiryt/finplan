@@ -199,7 +199,7 @@ export function updateGroup(groups: CategoryGroup[], id: string, patch: Partial<
   })
 }
 
-/** 中身のカテゴリーに、スーパーカテゴリーの色と色相がほぼ同じ色を割り当てる（既存の色は上書き） */
+/** 中身のカテゴリーに、スーパーカテゴリーの色と色相がほぼ同じ色を割り当てる（既存の色は上書き）。1件だけなら同じ色 */
 export function recolorMembers(
   groups: CategoryGroup[],
   colors: Record<string, string>,
@@ -208,7 +208,7 @@ export function recolorMembers(
 ): Record<string, string> {
   const g = groups.find((x) => x.id === id)
   if (!g?.color) return colors
-  const shades = harmoniousShades(g.color, g.members.length, random)
+  const shades = g.members.length === 1 ? [g.color] : harmoniousShades(g.color, g.members.length, random)
   return { ...colors, ...Object.fromEntries(g.members.map((m, i) => [m, shades[i]])) }
 }
 
