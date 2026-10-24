@@ -54,6 +54,15 @@ export function oklchToHex(color: Oklch): string {
   return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`
 }
 
+/** OKLab での色の差（見た目の違いの大きさ） */
+export function colorDistance(a: string, b: string): number {
+  const x = hexToOklch(a)
+  const y = hexToOklch(b)
+  const [ax, ay] = [x.c * Math.cos((x.h * Math.PI) / 180), x.c * Math.sin((x.h * Math.PI) / 180)]
+  const [bx, by] = [y.c * Math.cos((y.h * Math.PI) / 180), y.c * Math.sin((y.h * Math.PI) / 180)]
+  return Math.hypot(x.l - y.l, ax - bx, ay - by)
+}
+
 /** 0〜1 の乱数を返す関数（テストでは決まった値を返すものを渡す） */
 export type Random = () => number
 

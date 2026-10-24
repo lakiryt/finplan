@@ -4,17 +4,17 @@ import { filterByMonths } from '../domain/aggregate'
 import { emptyCategoryStat, expenseRanking, expenseTotals, rawExpenseByCategory, rawMonthlyRows } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
+import { flatten, reconcileGroups, sortByTotal } from '../domain/groups'
 import {
   categoryColorsInUse,
-  colorJoinedMembers,
-  groupColorsInUse,
+  changeGroups,
+  clearColors,
   displaySeries,
-  flatten,
+  groupColorsInUse,
   parseViewConfig,
-  reconcileGroups,
   recolorMembers,
+  setCategoryColor,
   setGroupColor,
-  sortByTotal,
   type ViewConfig,
 } from '../domain/view'
 import { downloadJson, useStoredState } from '../state/storage'
@@ -49,6 +49,8 @@ export function RawOverview({ transactions, from, to }: Props) {
   // 表の行は、全データで支出のあるカテゴリーすべて（期間を変えても表が動かないように）
   const totals = useMemo(() => expenseTotals(transactions), [transactions])
   const groups = useMemo(() => reconcileGroups(view.groups, expenseRanking(totals)), [view.groups, totals])
+  // 編集はすべて、データに合わせた後の設定を元にする
+  const current = useMemo(() => ({ ...view, groups }), [view, groups])
   const legendRows: LegendRow[] = flatten(groups).map((c) => ({
     category: c,
     stat: stats.get(c) ?? emptyCategoryStat(c),
@@ -56,13 +58,12 @@ export function RawOverview({ transactions, from, to }: Props) {
   }))
 
   // グラフは重いので、系列とデータは関係する値が変わったときだけ作り直す
-  const { useSuperCategories, colors } = view
   const series = useMemo(
     () =>
-      displaySeries(groups, { useSuperCategories, colors })
+      displaySeries(current)
         .map((s) => ({ ...s, color: s.color ?? theme.other, total: s.members.reduce((sum, m) => sum + (stats.get(m)?.total ?? 0), 0) }))
         .filter((s) => s.total > 0),
-    [groups, useSuperCategories, colors, stats, theme],
+    [current, stats, theme],
   )
   const barData = useMemo(
     () =>
@@ -74,17 +75,6 @@ export function RawOverview({ transactions, from, to }: Props) {
       }),
     [rows, series],
   )
-
-  const setColor = (category: string, color: string | undefined) => {
-    const colors = { ...view.colors }
-    if (color) colors[category] = color
-    else delete colors[category]
-    setView({ ...view, colors })
-  }
-  const setGroupColorAndMembers = (id: string, color: string | undefined) => {
-    const next = setGroupColor(groups, view.colors, id, color)
-    setView({ ...view, ...next })
-  }
 
   async function importView(file: File) {
     try {
@@ -115,7 +105,7 @@ export function RawOverview({ transactions, from, to }: Props) {
           <input
             type="checkbox"
             checked={view.useSuperCategories}
-            onChange={(e) => setView({ ...view, useSuperCategories: e.target.checked })}
+            onChange={(e) => setView({ ...current, useSuperCategories: e.target.checked })}
           />
           グラフをスーパーカテゴリーでまとめる
         </label>
@@ -126,13 +116,12 @@ export function RawOverview({ transactions, from, to }: Props) {
       <CategoryLegendTable
         rows={legendRows}
         groups={groups}
-        // 色付きのスーパーカテゴリーに無色のカテゴリーが加わったら、似た色を割り当てる
-        onGroupsChange={(g) => setView({ ...view, groups: g, colors: colorJoinedMembers(groups, g, view.colors) })}
-        onColorChange={setColor}
-        onGroupColorChange={setGroupColorAndMembers}
-        onRecolorMembers={(id) => setView({ ...view, colors: recolorMembers(groups, view.colors, id) })}
-        categoryColorsInUse={categoryColorsInUse(view)}
-        groupColorsInUse={groupColorsInUse(groups)}
+        onGroupsChange={(g) => setView(changeGroups(current, g))}
+        onColorChange={(category, color) => setView(setCategoryColor(current, category, color))}
+        onGroupColorChange={(id, color) => setView(setGroupColor(current, id, color))}
+        onRecolorMembers={(id) => setView(recolorMembers(current, id))}
+        categoryColorsInUse={categoryColorsInUse(current)}
+        groupColorsInUse={groupColorsInUse(current)}
         gray={theme.other}
         uid={uid}
       />
@@ -140,18 +129,18 @@ export function RawOverview({ transactions, from, to }: Props) {
         <button onClick={undo} disabled={!canUndo} title={`Ctrl+Z / ⌘Z でも戻せます（あと${steps}手）`}>
           ↶ 元に戻す
         </button>
-        <button onClick={() => setView({ ...view, groups: sortByTotal(groups, totals) })}>多い順に並べ替える</button>
+        <button onClick={() => setView({ ...current, groups: sortByTotal(groups, totals) })}>多い順に並べ替える</button>
         <button
-          onClick={() => setView({ ...view, colors: {}, groups: groups.map(({ id, label, members }) => ({ id, label, members })) })}
-          disabled={!categoryColorsInUse(view).length && !groupColorsInUse(groups).length}
+          onClick={() => setView(clearColors(current))}
+          disabled={!categoryColorsInUse(current).length && !groupColorsInUse(current).length}
         >
           色をすべて消す
         </button>
         <button onClick={() => confirm('表示の設定（色・並び順・スーパーカテゴリー）を初期状態に戻しますか？') && setView(initialView)}>
           表示の設定をすべて初期に戻す
         </button>
-        {/* 並び順をすべて残すため、データに合わせた後のグループで書き出す */}
-        <button onClick={() => downloadJson('finplan-view.json', { ...view, groups })}>表示の設定を書き出す</button>
+        {/* 並び順をすべて残すため、データに合わせた後の設定を書き出す */}
+        <button onClick={() => downloadJson('finplan-view.json', current)}>表示の設定を書き出す</button>
         <label className="button">
           表示の設定を読み込む
           <input

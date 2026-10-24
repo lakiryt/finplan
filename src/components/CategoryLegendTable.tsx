@@ -10,7 +10,7 @@ import {
   updateGroup,
   type CategoryGroup,
   type IdGenerator,
-} from '../domain/view'
+} from '../domain/groups'
 import { ColorPanel, ColorPicker } from './ColorPicker'
 import { yen } from './format'
 import { Popover } from './Popover'
