@@ -90,14 +90,6 @@ button:disabled { opacity: 0.4; cursor: default; }
 .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 .row h3 { margin: 0; }
 
-.swatch-input {
-  width: 16px; height: 16px; padding: 0; margin-right: 6px;
-  border: 1px solid var(--border); border-radius: 2px; cursor: pointer;
-  vertical-align: -3px; background: none;
-}
-.swatch-input::-webkit-color-swatch-wrapper { padding: 0; }
-.swatch-input::-webkit-color-swatch { border: none; border-radius: 1px; }
-.swatch-input::-moz-color-swatch { border: none; border-radius: 1px; }
 .chip {
   display: inline-flex; align-items: center; gap: 4px;
   border: 1px solid var(--border); border-radius: 999px; padding: 0 4px 0 10px; font-size: 0.85rem;
@@ -127,8 +119,6 @@ button:disabled { opacity: 0.4; cursor: default; }
 .popover-row.new { border-top: 1px solid var(--line); padding-top: 4px; margin-top: 2px; }
 .popover-row.new input { flex: 1; min-width: 0; }
 
-.category-cell .clear-color { visibility: hidden; border: none; background: none; padding: 0 4px; color: var(--muted); }
-.category-cell:hover .clear-color { visibility: visible; }
 
 /* 表の横のスーパーカテゴリーのバー。1件だけなら真ん丸、まとめると縦につながる */
 .legend-table td.super-cell { position: relative; width: 104px; min-width: 104px; padding: 0; border-bottom: none; }
@@ -143,11 +133,30 @@ button:disabled { opacity: 0.4; cursor: default; }
 .seg.join-down { bottom: -1px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .seg-actions {
   position: absolute; left: 42px; top: 50%; transform: translateY(-50%);
-  display: flex; visibility: hidden;
+  display: flex;
 }
-tr:hover .seg-actions { visibility: visible; }
 .seg-actions button { border: none; background: none; padding: 0 4px; font-size: 0.8rem; color: var(--ink-2); }
-.seg-actions button:hover { color: var(--accent); }
+.seg-actions button:hover:not(:disabled) { color: var(--accent); }
+.seg-actions button:disabled { opacity: 0.2; }
 .group-editor { display: grid; gap: 8px; padding: 8px; }
 .group-editor label { display: flex; align-items: center; gap: 8px; }
 .group-editor input:not([type="color"]) { flex: 1; min-width: 0; }
+
+/* 四角い色見本。無色は斜線の入った空の四角 */
+.swatch-button {
+  display: inline-block; width: 16px; height: 16px; padding: 0; margin-right: 6px;
+  border: 1px solid var(--border); border-radius: 2px; vertical-align: -3px; cursor: pointer;
+}
+.swatch-button.none {
+  background: linear-gradient(to top right, transparent calc(50% - 1px), var(--muted) 50%, transparent calc(50% + 1px));
+  border: 1px dashed var(--muted);
+}
+.picker { display: grid; gap: 6px; padding: 8px; width: 232px; }
+.picker-label { font-size: 0.8rem; color: var(--ink-2); }
+.picker-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.picker-swatch { width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 3px; cursor: pointer; }
+.picker-swatch.selected, .picker-none.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+.picker-none { display: flex; align-items: center; gap: 2px; border: none; background: none; padding: 2px; }
+.picker-custom { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; border-top: 1px solid var(--line); padding-top: 6px; }
+.picker-custom input { width: 40px; height: 24px; padding: 0; }
+.group-editor .editor-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

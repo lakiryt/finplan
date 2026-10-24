@@ -5,10 +5,19 @@ import { filterByMonths } from '../domain/aggregate'
 import { expenseRanking, rawExpenseByCategory, rawMonthlyRows, type RawCategoryStat } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
-import { colorsInUse, displaySeries, flatten, parseViewConfig, reconcileGroups, sortByTotal, type ViewConfig } from '../domain/view'
-import { useStoredState } from '../state/storage'
+import {
+  colorsInUse,
+  displaySeries,
+  flatten,
+  parseViewConfig,
+  reconcileGroups,
+  recolorMembers,
+  setGroupColor,
+  sortByTotal,
+  type ViewConfig,
+} from '../domain/view'
+import { downloadJson, useStoredState } from '../state/storage'
 import { CategoryLegendTable, type LegendRow } from './CategoryLegendTable'
-import { PaletteList } from './ColorInput'
 import { ExpensePie } from './ExpensePie'
 import { man, yen } from './format'
 import { useChartTheme } from './palette'
@@ -55,6 +64,19 @@ export function RawOverview({ transactions, from, to }: Props) {
     else delete colors[category]
     setView({ ...view, colors })
   }
+  const setGroupColorAndMembers = (id: string, color: string | undefined) => {
+    const next = setGroupColor(groups, view.colors, id, color)
+    setView({ ...view, ...next })
+  }
+
+  async function importView(file: File) {
+    try {
+      setView(parseViewConfig(JSON.parse(await file.text())))
+    } catch (e) {
+      alert(`表示の設定を読み込めませんでした: ${e instanceof Error ? e.message : e}`)
+    }
+  }
+
   const totals = useMemo(() => {
     const m = new Map<string, number>()
     for (const t of transactions) if (t.amount < 0) m.set(t.category, (m.get(t.category) ?? 0) - t.amount)
@@ -63,7 +85,6 @@ export function RawOverview({ transactions, from, to }: Props) {
 
   return (
     <div>
-      <PaletteList colors={colorsInUse(view)} />
       <p className="muted small">
         CSVの記録をそのまま集計しています（マイナスを支出、プラスを収入として合計）。家賃・貯金・口座移動なども含まれます。
       </p>
@@ -148,6 +169,10 @@ export function RawOverview({ transactions, from, to }: Props) {
         groups={groups}
         onGroupsChange={(g) => setView({ ...view, groups: g })}
         onColorChange={setColor}
+        onGroupColorChange={setGroupColorAndMembers}
+        onRecolorMembers={(id) => setView({ ...view, colors: recolorMembers(groups, view.colors, id) })}
+        palette={theme.series}
+        inUse={colorsInUse(view)}
         gray={theme.other}
         uid={uid}
       />
@@ -162,6 +187,21 @@ export function RawOverview({ transactions, from, to }: Props) {
         <button onClick={() => confirm('表示の設定（色・並び順・スーパーカテゴリー）を初期状態に戻しますか？') && setView(initialView)}>
           表示の設定をすべて初期に戻す
         </button>
+        {/* 並び順をすべて残すため、データに合わせた後のグループで書き出す */}
+        <button onClick={() => downloadJson('finplan-view.json', { ...view, groups })}>表示の設定を書き出す</button>
+        <label className="button">
+          表示の設定を読み込む
+          <input
+            type="file"
+            accept=".json,application/json"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) importView(file)
+              e.target.value = ''
+            }}
+          />
+        </label>
       </div>
     </div>
   )

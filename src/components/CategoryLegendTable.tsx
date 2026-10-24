@@ -11,7 +11,7 @@ import {
   type CategoryGroup,
   type IdGenerator,
 } from '../domain/view'
-import { ColorInput } from './ColorInput'
+import { ColorPicker } from './ColorPicker'
 import { yen } from './format'
 import { Popover } from './Popover'
 
@@ -28,6 +28,12 @@ interface Props {
   groups: CategoryGroup[]
   onGroupsChange: (groups: CategoryGroup[]) => void
   onColorChange: (category: string, color: string | undefined) => void
+  onGroupColorChange: (groupId: string, color: string | undefined) => void
+  /** 中身のカテゴリーにスーパーカテゴリーと似た色を割り当て直す */
+  onRecolorMembers: (groupId: string) => void
+  /** 色の選択に出す基本の色と、使用中の色 */
+  palette: string[]
+  inUse: string[]
   /** 色が未設定のときの色 */
   gray: string
   uid: IdGenerator
@@ -59,7 +65,8 @@ interface ResizeDrag {
  * グラフの凡例を兼ねるカテゴリー別の表。
  * 左のつまみで行を並べ替え、表の横のバーでスーパーカテゴリー（連続した行のまとめ）を作る
  */
-export function CategoryLegendTable({ rows, groups, onGroupsChange, onColorChange, gray, uid }: Props) {
+export function CategoryLegendTable(props: Props) {
+  const { rows, groups, onGroupsChange, onColorChange, onGroupColorChange, onRecolorMembers, palette, inUse, gray, uid } = props
   const [expanded, setExpanded] = useState(false)
   // 行の並べ替え
   const [armed, setArmed] = useState<string>()
@@ -167,11 +174,22 @@ export function CategoryLegendTable({ rows, groups, onGroupsChange, onColorChang
                   onKeyDown={(e) => e.key === 'Enter' && close()}
                 />
               </label>
-              <label>
+              <div className="editor-row">
                 色
-                <ColorInput value={g.color ?? gray} onChange={(c) => onGroupsChange(updateGroup(groups, g.id, { color: c }))} />
-                {g.color && <button onClick={() => onGroupsChange(updateGroup(groups, g.id, { color: undefined }))}>色を消す</button>}
-              </label>
+                <ColorPicker
+                  value={g.color}
+                  onChange={(c) => onGroupColorChange(g.id, c)}
+                  palette={palette}
+                  inUse={inUse}
+                  noneColor={g.color ? undefined : gray}
+                  title="スーパーカテゴリーの色"
+                />
+                {g.color && g.members.length > 1 && (
+                  <button onClick={() => onRecolorMembers(g.id)} title="中身のカテゴリーに、この色と似た色を割り当て直す">
+                    中身に似た色を割り当てる
+                  </button>
+                )}
+              </div>
               <div className="muted small">中身: {g.members.join('、')}</div>
               {g.members.length > 1 && (
                 <button
@@ -186,22 +204,25 @@ export function CategoryLegendTable({ rows, groups, onGroupsChange, onColorChang
             </div>
           )}
         </Popover>
+        {/* どの行も同じ並びで出し、使えないものは無効にする（位置がずれない・スマホでも押せる） */}
         <span className="seg-actions">
-          {first && gi > 0 && (
-            <button title="上とまとめる" onClick={() => onGroupsChange(mergeWithNext(groups, gi - 1))}>
-              ↑
-            </button>
-          )}
-          {last && gi < shownGroups.length - 1 && (
-            <button title="下とまとめる" onClick={() => onGroupsChange(mergeWithNext(groups, gi))}>
-              ↓
-            </button>
-          )}
-          {g.members.length > 1 && (
-            <button title="このカテゴリーを切り離す" onClick={() => onGroupsChange(detachCategory(groups, category, uid))}>
-              ✂
-            </button>
-          )}
+          <button title="上とまとめる" disabled={!first || gi === 0} onClick={() => onGroupsChange(mergeWithNext(groups, gi - 1))}>
+            ↑
+          </button>
+          <button
+            title="下とまとめる"
+            disabled={!last || gi === shownGroups.length - 1}
+            onClick={() => onGroupsChange(mergeWithNext(groups, gi))}
+          >
+            ↓
+          </button>
+          <button
+            title="このカテゴリーを切り離す"
+            disabled={g.members.length === 1}
+            onClick={() => onGroupsChange(detachCategory(groups, category, uid))}
+          >
+            ✂
+          </button>
         </span>
       </td>
     )
@@ -255,13 +276,14 @@ export function CategoryLegendTable({ rows, groups, onGroupsChange, onColorChang
                 ⋮⋮
               </td>
               <td className="category-cell">
-                <ColorInput value={row.color ?? gray} onChange={(c) => onColorChange(row.category, c)} title={`${row.category}の色を変える`} />
+                <ColorPicker
+                  value={row.color}
+                  onChange={(c) => onColorChange(row.category, c)}
+                  palette={palette}
+                  inUse={inUse}
+                  title={`${row.category}の色（無色ならスーパーカテゴリーの色で表示）`}
+                />
                 {row.category || '（空欄）'}
-                {row.color && (
-                  <button className="clear-color" title="色を消す" onClick={() => onColorChange(row.category, undefined)}>
-                    ×
-                  </button>
-                )}
               </td>
               <td className="num">{row.stat.count}</td>
               <td className="num">{yen(row.stat.total)}</td>

@@ -45,6 +45,7 @@ CSV → importers → Transaction[] → classify（ルール → カテゴリー
 | `src/domain/stats.ts` | 平均・中央値・直近 n か月の平均 |
 | `src/domain/config.ts` | 設定の検証と旧形式からの移行（`parseConfig`） |
 | `src/domain/view.ts` | 表示の設定（色・スーパーカテゴリー）。集計の加工とは独立 |
+| `src/domain/colors.ts` | 色の計算（OKLCH）。スーパーカテゴリーの色から中身に似た色を作る |
 | `src/config/default-config.json` | 分類の一般的な初期設定（グループ・カテゴリーの割り当て・ルール） |
 | `src/config/default-view.json` | 表示の一般的な初期設定（スーパーカテゴリーなど） |
 | `src/config/initial.ts` | 画面で使う初期設定を決める（開発サーバーでは `local/` を優先） |

@@ -1,0 +1,78 @@
+import { Popover } from './Popover'
+
+interface Props {
+  /** 未設定なら無色 */
+  value?: string
+  onChange: (color: string | undefined) => void
+  /** 基本の色 */
+  palette: string[]
+  /** 今どこかで使っている色 */
+  inUse: string[]
+  title?: string
+  /** 無色を選べるか */
+  allowNone?: boolean
+  /** 無色のときに見本に表示する色（未指定なら空の四角） */
+  noneColor?: string
+}
+
+const same = (a?: string, b?: string) => Boolean(a && b && a.toLowerCase() === b.toLowerCase())
+
+/** 四角い色見本。押すと「無色・基本の色・使用中の色・その他の色」から選べる */
+export function ColorPicker({ value, onChange, palette, inUse, title, allowNone = true, noneColor }: Props) {
+  const used = inUse.filter((c) => !palette.some((p) => same(p, c)))
+  const swatches = (colors: string[], close: () => void) =>
+    colors.map((c) => (
+      <button
+        key={c}
+        className={`picker-swatch ${same(c, value) ? 'selected' : ''}`}
+        style={{ background: c }}
+        title={c}
+        onClick={() => {
+          onChange(c)
+          close()
+        }}
+      />
+    ))
+
+  return (
+    <Popover
+      className="color-picker"
+      trigger={(toggle) => (
+        <button
+          className={`swatch-button ${value ? '' : 'none'}`}
+          style={value || noneColor ? { background: value ?? noneColor } : undefined}
+          title={title ?? '色を変える'}
+          onClick={toggle}
+        />
+      )}
+    >
+      {(close) => (
+        <div className="picker">
+          {allowNone && (
+            <button
+              className={`picker-none ${value ? '' : 'selected'}`}
+              onClick={() => {
+                onChange(undefined)
+                close()
+              }}
+            >
+              <span className="swatch-button none" /> 無色
+            </button>
+          )}
+          <div className="picker-label">基本の色</div>
+          <div className="picker-row">{swatches(palette, close)}</div>
+          {used.length > 0 && (
+            <>
+              <div className="picker-label">使用中の色</div>
+              <div className="picker-row">{swatches(used, close)}</div>
+            </>
+          )}
+          <label className="picker-custom">
+            その他の色
+            <input type="color" value={value ?? '#888888'} onChange={(e) => onChange(e.target.value)} />
+          </label>
+        </div>
+      )}
+    </Popover>
+  )
+}
