@@ -1,11 +1,10 @@
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { hasCriteria, type ExcludeRule, type OffsetRule, type ProcessingConfig, type Step } from '../domain/processing'
 import { categoryTotals, rankByTotal, type Side } from '../domain/raw'
 import type { Transaction } from '../domain/types'
-import { ConditionEditor } from './ConditionEditor'
+import { ConditionDialog } from './ConditionDialog'
 import { describeRule, type RuleDraft } from './ruleText'
 import { InfoTip } from './InfoTip'
-import { Popover } from './Popover'
 import { ExcludeInfo, OffsetInfo } from './ProcessingInfo'
 
 interface Props {
@@ -70,12 +69,16 @@ interface StepProps<R extends ExcludeRule | OffsetRule> {
 /** 工程のカード。見出しのチェックで工程ごと有効・無効を切り替え、無効のときは見出し以外を薄くする */
 function StepCard<R extends ExcludeRule | OffsetRule>(props: StepProps<R>) {
   const { kind, title, info, description, step, onChange, categories, transactions, toRule } = props
+  // 編集中の条件（id が無ければ新しく足す条件）。条件の編集はモーダルで行う
+  const [editing, setEditing] = useState<{ draft: RuleDraft; id?: string } | null>(null)
   const draftOf = (r: R): RuleDraft => ({ enabled: r.enabled, when: r.when, target: 'target' in r ? r.target : undefined })
   const fresh: RuleDraft = { enabled: true, when: { side: 'expense' }, target: kind === 'offset' ? '' : undefined }
   const active = step.rules.filter((r) => r.enabled && hasCriteria(r.when)).length
-  const editor = (initial: RuleDraft, save: (d: RuleDraft) => void, close: () => void, onDelete?: () => void) => (
-    <ConditionEditor kind={kind} initial={initial} categories={categories} transactions={transactions} onSave={save} onDelete={onDelete} close={close} />
-  )
+
+  const save = (d: RuleDraft) => {
+    const id = editing?.id
+    onChange({ ...step, rules: id ? step.rules.map((x) => (x.id === id ? toRule(d, id) : x)) : [...step.rules, toRule(d, uid())] })
+  }
 
   return (
     <div className={`card step ${step.enabled ? '' : 'off'}`}>
@@ -93,39 +96,30 @@ function StepCard<R extends ExcludeRule | OffsetRule>(props: StepProps<R>) {
         <p className="muted small">{description}</p>
         <div className="badges">
           {step.rules.map((r) => (
-            <Popover
+            <button
               key={r.id}
-              trigger={(toggle) => (
-                <button
-                  className={`badge-rule ${r.enabled && hasCriteria(r.when) ? '' : 'off'}`}
-                  onClick={toggle}
-                  title={r.enabled ? '押すと編集できます' : '無効の条件（押すと編集できます）'}
-                >
-                  {describeRule(draftOf(r))}
-                </button>
-              )}
+              className={`badge-rule ${r.enabled && hasCriteria(r.when) ? '' : 'off'}`}
+              onClick={() => setEditing({ draft: draftOf(r), id: r.id })}
+              title={r.enabled ? '押すと編集できます' : '無効の条件（押すと編集できます）'}
             >
-              {(close) =>
-                editor(
-                  draftOf(r),
-                  (d) => onChange({ ...step, rules: step.rules.map((x) => (x.id === r.id ? toRule(d, r.id) : x)) }),
-                  close,
-                  () => onChange({ ...step, rules: step.rules.filter((x) => x.id !== r.id) }),
-                )
-              }
-            </Popover>
+              {describeRule(draftOf(r))}
+            </button>
           ))}
-          <Popover
-            trigger={(toggle) => (
-              <button className="badge-add" onClick={toggle}>
-                ＋ 条件を追加
-              </button>
-            )}
-          >
-            {(close) => editor(fresh, (d) => onChange({ ...step, rules: [...step.rules, toRule(d, uid())] }), close)}
-          </Popover>
+          <button className="badge-add" onClick={() => setEditing({ draft: fresh })}>
+            ＋ 条件を追加
+          </button>
         </div>
       </fieldset>
+      <ConditionDialog
+        kind={kind}
+        initial={editing?.draft ?? null}
+        editing={Boolean(editing?.id)}
+        categories={categories}
+        transactions={transactions}
+        onSave={save}
+        onDelete={() => editing?.id && onChange({ ...step, rules: step.rules.filter((x) => x.id !== editing.id) })}
+        onClose={() => setEditing(null)}
+      />
     </div>
   )
 }

@@ -227,7 +227,21 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .badge-rule.off { opacity: 0.5; text-decoration: line-through; background: var(--page); border-style: dashed; }
 .badge-add { border-radius: 999px; padding: 2px 10px; font-size: 0.85rem; border-style: dashed; }
-.condition-editor { display: grid; gap: 8px; padding: 10px 12px; min-width: min(360px, calc(100vw - 32px)); font-size: 0.9rem; }
+/* 条件の編集画面（モーダル）。下に当たる記録の一覧を出す */
+.condition-dialog {
+  width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--ink);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+.condition-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.condition-editor { display: grid; gap: 8px; padding: 14px 18px; font-size: 0.9rem; }
+.condition-editor h3 { margin: 0; }
+.condition-results { border-top: 1px solid var(--line); padding-top: 8px; }
+.condition-results p { margin: 0 0 6px; }
+.results-scroll { max-height: 45vh; overflow-y: auto; }
+.results-scroll table { display: table; width: 100%; }
+.results-memo { white-space: normal; }
+.condition-results button.pin { font-size: 0.8rem; padding: 1px 8px; white-space: nowrap; }
 .condition-editor .editor-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .condition-editor label { display: inline-flex; align-items: center; gap: 4px; }
 .condition-editor select.unset { color: var(--muted); }
