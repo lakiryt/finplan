@@ -18,7 +18,7 @@ import {
   type ViewConfig,
 } from '../domain/view'
 import { downloadJson, useStoredState } from '../state/storage'
-import { useUndoable } from '../state/undo'
+import { UndoSessionContext, useUndoable } from '../state/undo'
 import { CategoryLegendTable, type LegendRow } from './legend/CategoryLegendTable'
 import { yen } from './format'
 import { useChartTheme } from './palette'
@@ -38,7 +38,8 @@ export function RawOverview({ transactions, from, to }: Props) {
   const theme = useChartTheme()
   const [view, saveView] = useStoredState<ViewConfig>('finplan.view', initialView, parseViewConfig)
   // 表示の設定の変更はすべてここを通し、元に戻せるようにする
-  const { set: setView, undo, canUndo, steps } = useUndoable(view, saveView)
+  // 窓（ポップアップ）が開いている間の変更は1手にまとめる
+  const { set: setView, undo, canUndo, steps, session } = useUndoable(view, saveView)
 
   const inPeriod = useMemo(() => filterByMonths(transactions, from, to), [transactions, from, to])
   const rows = useMemo(() => rawMonthlyRows(inPeriod, from, to), [inPeriod, from, to])
@@ -85,77 +86,79 @@ export function RawOverview({ transactions, from, to }: Props) {
   }
 
   return (
-    <div>
-      <p className="muted small">
-        CSVの記録をそのまま集計しています（マイナスを支出、プラスを収入として合計）。家賃・貯金・口座移動なども含まれます。
-      </p>
-      <StatTiles
-        tiles={[
-          { label: '支出 月平均', value: expense.mean, note: `${expense.count}か月` },
-          { label: '支出 中央値', value: expense.median, note: `最小 ${yen(expense.min)} / 最大 ${yen(expense.max)}` },
-          { label: '収入 月平均', value: income.mean },
-          { label: '収入 中央値', value: income.median },
-        ]}
-      />
+    <UndoSessionContext.Provider value={session}>
+      <div>
+        <p className="muted small">
+          CSVの記録をそのまま集計しています（マイナスを支出、プラスを収入として合計）。家賃・貯金・口座移動なども含まれます。
+        </p>
+        <StatTiles
+          tiles={[
+            { label: '支出 月平均', value: expense.mean, note: `${expense.count}か月` },
+            { label: '支出 中央値', value: expense.median, note: `最小 ${yen(expense.min)} / 最大 ${yen(expense.max)}` },
+            { label: '収入 月平均', value: income.mean },
+            { label: '収入 中央値', value: income.median },
+          ]}
+        />
 
-      <RawCharts series={series} barData={barData} mean={expense.mean} median={expense.median} theme={theme} />
+        <RawCharts series={series} barData={barData} mean={expense.mean} median={expense.median} theme={theme} />
 
-      <div className="row">
-        <label>
-          <input
-            type="checkbox"
-            checked={view.useSuperCategories}
-            onChange={(e) => setView({ ...current, useSuperCategories: e.target.checked })}
-          />
-          グラフをスーパーカテゴリーでまとめる
-        </label>
-        <span className="muted small">
-          表の順番がグラフの順番（棒グラフは下から）です。左のつまみ（⋮⋮）で並べ替え、右のバーの端をドラッグするか ↑↓ でスーパーカテゴリーにまとめます。
-        </span>
+        <div className="row">
+          <label>
+            <input
+              type="checkbox"
+              checked={view.useSuperCategories}
+              onChange={(e) => setView({ ...current, useSuperCategories: e.target.checked })}
+            />
+            グラフをスーパーカテゴリーでまとめる
+          </label>
+          <span className="muted small">
+            表の順番がグラフの順番（棒グラフは下から）です。左のつまみ（⋮⋮）で並べ替え、右のバーの端をドラッグするか ↑↓ でスーパーカテゴリーにまとめます。
+          </span>
+        </div>
+        <CategoryLegendTable
+          rows={legendRows}
+          groups={groups}
+          onGroupsChange={(g) => setView(changeGroups(current, g))}
+          onColorChange={(category, color) => setView(setCategoryColor(current, category, color))}
+          onGroupColorChange={(id, color) => setView(setGroupColor(current, id, color))}
+          onRecolorMembers={(id) => setView(recolorMembers(current, id))}
+          categoryColorsInUse={categoryColorsInUse(current)}
+          groupColorsInUse={groupColorsInUse(current)}
+          gray={theme.other}
+          uid={uid}
+        />
+        <div className="row">
+          <button onClick={undo} disabled={!canUndo} title={`Ctrl+Z / ⌘Z でも戻せます（あと${steps}手）`}>
+            ↶ 元に戻す
+          </button>
+          <button onClick={() => setView({ ...current, groups: sortByTotal(groups, totals) })}>多い順に並べ替える</button>
+          <button
+            onClick={() => setView(clearColors(current))}
+            disabled={!categoryColorsInUse(current).length && !groupColorsInUse(current).length}
+          >
+            色をすべて消す
+          </button>
+          {/* 元に戻せるので、確認は出さない */}
+          <button onClick={() => setView(initialView)}>
+            表示の設定をすべて初期に戻す
+          </button>
+          {/* 並び順をすべて残すため、データに合わせた後の設定を書き出す */}
+          <button onClick={() => downloadJson('finplan-view.json', current)}>表示の設定を書き出す</button>
+          <label className="button">
+            表示の設定を読み込む
+            <input
+              type="file"
+              accept=".json,application/json"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) importView(file)
+                e.target.value = ''
+              }}
+            />
+          </label>
+        </div>
       </div>
-      <CategoryLegendTable
-        rows={legendRows}
-        groups={groups}
-        onGroupsChange={(g) => setView(changeGroups(current, g))}
-        onColorChange={(category, color) => setView(setCategoryColor(current, category, color))}
-        onGroupColorChange={(id, color) => setView(setGroupColor(current, id, color))}
-        onRecolorMembers={(id) => setView(recolorMembers(current, id))}
-        categoryColorsInUse={categoryColorsInUse(current)}
-        groupColorsInUse={groupColorsInUse(current)}
-        gray={theme.other}
-        uid={uid}
-      />
-      <div className="row">
-        <button onClick={undo} disabled={!canUndo} title={`Ctrl+Z / ⌘Z でも戻せます（あと${steps}手）`}>
-          ↶ 元に戻す
-        </button>
-        <button onClick={() => setView({ ...current, groups: sortByTotal(groups, totals) })}>多い順に並べ替える</button>
-        <button
-          onClick={() => setView(clearColors(current))}
-          disabled={!categoryColorsInUse(current).length && !groupColorsInUse(current).length}
-        >
-          色をすべて消す
-        </button>
-        {/* 元に戻せるので、確認は出さない */}
-        <button onClick={() => setView(initialView)}>
-          表示の設定をすべて初期に戻す
-        </button>
-        {/* 並び順をすべて残すため、データに合わせた後の設定を書き出す */}
-        <button onClick={() => downloadJson('finplan-view.json', current)}>表示の設定を書き出す</button>
-        <label className="button">
-          表示の設定を読み込む
-          <input
-            type="file"
-            accept=".json,application/json"
-            hidden
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) importView(file)
-              e.target.value = ''
-            }}
-          />
-        </label>
-      </div>
-    </div>
+    </UndoSessionContext.Provider>
   )
 }

@@ -1,11 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { UndoSessionContext } from '../state/undo'
 
 const MARGIN = 8
 
 /**
  * ボタンの下に出る小さな窓。表のスクロール枠で切れないよう、画面に固定した位置に出す。
  * 開いた後に窓の大きさを測り、画面からはみ出さない位置に置き直す。
- * 外側を押す・スクロールする・画面の大きさが変わると閉じる
+ * 外側を押す・スクロールする・画面の大きさが変わると閉じる。
+ * 開いている間の変更は、元に戻すの1手にまとめる（UndoSessionContext があれば）
  */
 export function Popover({
   trigger,
@@ -21,6 +23,8 @@ export function Popover({
   const [pos, setPos] = useState<{ top: number; left: number }>()
   const ref = useRef<HTMLSpanElement>(null)
   const popRef = useRef<HTMLDivElement>(null)
+  const undoSession = useContext(UndoSessionContext)
+  const isOpen = anchor !== undefined
   const close = () => {
     setAnchor(undefined)
     setPos(undefined)
@@ -39,6 +43,12 @@ export function Popover({
     const top = below + height > window.innerHeight - MARGIN ? Math.max(MARGIN, anchor.top - 4 - height) : below
     setPos({ top, left: Math.max(MARGIN, left) })
   }, [anchor])
+
+  useEffect(() => {
+    if (!isOpen || !undoSession) return
+    undoSession.begin()
+    return () => undoSession.end()
+  }, [isOpen, undoSession])
 
   useEffect(() => {
     if (!anchor) return
