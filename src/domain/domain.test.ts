@@ -3,10 +3,22 @@ import { monthRange, monthlyRows } from './aggregate'
 import { addMonths, classify, splitAmount } from './classify'
 import { defaultConfig, parseConfig } from './config'
 import { parseCsv, parseDate } from './importers'
-import { rawExpenseByCategory, rawMonthlyRows, topExpenseCategories } from './raw'
+import { expenseRanking, rawExpenseByCategory, rawMonthlyRows } from './raw'
 import { median, seriesStats } from './stats'
 import type { ClassifyConfig, Rule } from './types'
-import { applyDisplayNames, assignColors, defaultView, parseViewConfig, type ViewConfig } from './view'
+import {
+  applyDisplayNames,
+  assignColors,
+  assignSuper,
+  createSuper,
+  defaultView,
+  deleteSuper,
+  moveKey,
+  orderKeys,
+  parseViewConfig,
+  renameSuper,
+  type ViewConfig,
+} from './view'
 
 const csv = `金額,日付,メモ,カテゴリー名
 -1000,2026/01/05,スーパー,食費
@@ -163,8 +175,8 @@ describe('raw (no processing)', () => {
     expect(food.share).toBeCloseTo(6800 / 124800)
   })
 
-  it('picks top categories from all data', () => {
-    expect(topExpenseCategories(txs, 2)).toEqual(['家賃', '貯蓄'])
+  it('ranks categories by total expense', () => {
+    expect(expenseRanking(txs)).toEqual(['家賃', '貯蓄', '食費'])
   })
 })
 
@@ -174,6 +186,7 @@ describe('view', () => {
     version: 1,
     useSuperCategories: true,
     colors: {},
+    order: [],
     superCategories: [{ id: 's', label: '住まいと食', members: ['食費', '家賃'] }],
   }
 
@@ -184,12 +197,34 @@ describe('view', () => {
     expect(rows[0].expenseByCategory).toEqual({ 住まいと食: 66000 })
   })
 
-  it('keeps chosen colors and fills the rest from the palette without duplicates', () => {
-    expect(assignColors(['a', 'b', 'c'], { b: '#111111' }, ['#111111', '#222222', '#333333'])).toEqual({
+  it('keeps chosen colors, fills the rest from the palette without duplicates, then falls back', () => {
+    expect(assignColors(['a', 'b', 'c', 'd'], { b: '#111111' }, ['#111111', '#222222', '#333333'], '#999999')).toEqual({
       a: '#222222',
       b: '#111111',
       c: '#333333',
+      d: '#999999',
     })
+  })
+
+  it('orders keys by saved order first, then by fallback ranking', () => {
+    expect(orderKeys(['a', 'b', 'c', 'd'], ['c', 'x'], ['d', 'a', 'b', 'c'])).toEqual(['c', 'd', 'a', 'b'])
+  })
+
+  it('moves a key to the target position', () => {
+    expect(moveKey(['a', 'b', 'c', 'd'], 'a', 'c')).toEqual(['b', 'c', 'a', 'd'])
+    expect(moveKey(['a', 'b', 'c', 'd'], 'd', 'b')).toEqual(['a', 'd', 'b', 'c'])
+  })
+
+  it('edits super categories', () => {
+    let v = createSuper(view, 'n', '新しい', '通信')
+    expect(v.superCategories[1]).toEqual({ id: 'n', label: '新しい', members: ['通信'] })
+    v = assignSuper(v, '食費', 'n')
+    expect(v.superCategories.map((s) => s.members)).toEqual([['家賃'], ['通信', '食費']])
+    v = assignSuper(v, '食費', null)
+    expect(v.superCategories[1].members).toEqual(['通信'])
+    v = renameSuper({ ...v, colors: { 新しい: '#123456' }, order: ['新しい'] }, 'n', '改名')
+    expect(v).toMatchObject({ colors: { 改名: '#123456' }, order: ['改名'] })
+    expect(deleteSuper(v, 'n').superCategories).toHaveLength(1)
   })
 
   it('loads the default view file and rejects broken ones', () => {

@@ -64,14 +64,11 @@ export function rawExpenseByCategory(txs: Transaction[], rows: RawMonth[]): RawC
 }
 
 /**
- * グラフで個別に色を付けるカテゴリー（残りは「その他」）。
- * 期間を変えても色が変わらないよう、期間ではなく全データの支出合計で選ぶ。
+ * 全データでの支出合計の多い順に並べたカテゴリー名。
+ * 期間を変えても並び（と色）が変わらないよう、表示順の初期値にはこれを使う。
  */
-export function topExpenseCategories(txs: Transaction[], n: number): string[] {
+export function expenseRanking(txs: Transaction[]): string[] {
   const totals = new Map<string, number>()
   for (const tx of txs) if (tx.amount < 0) totals.set(tx.category, (totals.get(tx.category) ?? 0) - tx.amount)
-  return [...totals.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, n)
-    .map(([c]) => c)
+  return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c)
 }

@@ -1,17 +1,31 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { filterByMonths } from '../domain/aggregate'
-import { rawExpenseByCategory, rawMonthlyRows, topExpenseCategories } from '../domain/raw'
+import { expenseRanking, rawExpenseByCategory, rawMonthlyRows } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
-import { applyDisplayNames, assignColors, defaultView, parseViewConfig, type ViewConfig } from '../domain/view'
+import {
+  applyDisplayNames,
+  assignColors,
+  assignSuper,
+  createSuper,
+  defaultView,
+  deleteSuper,
+  moveKey,
+  orderKeys,
+  parseViewConfig,
+  renameSuper,
+  superLabel,
+  superOf,
+  type ViewConfig,
+} from '../domain/view'
 import { useStoredState } from '../state/storage'
-import { ColorInput, PaletteList } from './ColorInput'
-import { ExpensePie, type PieSlice } from './ExpensePie'
+import { CategoryLegendTable, type LegendItem } from './CategoryLegendTable'
+import { PaletteList } from './ColorInput'
+import { ExpensePie } from './ExpensePie'
 import { man, yen } from './format'
 import { useChartTheme } from './palette'
 import { StatTiles } from './StatTiles'
-import { ViewSettings } from './ViewSettings'
 
 interface Props {
   transactions: Transaction[]
@@ -19,62 +33,50 @@ interface Props {
   to: string
 }
 
-const OTHER = '__other__'
-const OTHER_LABEL = 'その他'
-/** 色を選んでいなくても個別に表示するカテゴリーの数（残りは「その他」にまとめる） */
-const TOP_N = 7
-
 /** 加工なしの概要。CSVのカテゴリーと金額の符号だけで集計する（スーパーカテゴリーは表示上のまとめ） */
 export function RawOverview({ transactions, from, to }: Props) {
   const theme = useChartTheme()
   const [view, setView] = useStoredState<ViewConfig>('finplan.view', defaultView, parseViewConfig)
-  const [showTable, setShowTable] = useState(false)
 
-  const originalCategories = useMemo(() => [...new Set(transactions.map((t) => t.category))].sort(), [transactions])
   const displayed = useMemo(() => applyDisplayNames(transactions, view), [transactions, view])
   const inPeriod = useMemo(() => filterByMonths(displayed, from, to), [displayed, from, to])
   const rows = useMemo(() => rawMonthlyRows(inPeriod, from, to), [inPeriod, from, to])
-  const categories = useMemo(() => rawExpenseByCategory(inPeriod, rows), [inPeriod, rows])
+  const stats = useMemo(() => rawExpenseByCategory(inPeriod, rows), [inPeriod, rows])
   const expense = seriesStats(rows.map((r) => r.expense))
   const income = seriesStats(rows.map((r) => r.income))
 
-  // 期間を変えても色が変わらないよう、個別に表示するものは全データで決める。色を選んだものは必ず個別に表示する
-  const individually = useMemo(() => {
-    const top = topExpenseCategories(displayed, TOP_N)
-    const all = new Set(topExpenseCategories(displayed, Infinity))
-    return [...top, ...Object.keys(view.colors).filter((k) => all.has(k) && !top.includes(k))]
-  }, [displayed, view.colors])
-  const colors = useMemo(() => assignColors(individually, view.colors, theme.series), [individually, view.colors, theme.series])
-  const colorOf = (key: string) => colors[key] ?? theme.other
-  const isIndividual = (key: string) => individually.includes(key)
-  const keys = [...individually, OTHER]
-  const labelOf = (key: string) => (key === OTHER ? OTHER_LABEL : key)
-  const setColor = (key: string, color: string) => setView({ ...view, colors: { ...view.colors, [key]: color } })
+  // スーパーカテゴリーの中身の内訳用（まとめる前のカテゴリーで集計）
+  const memberStats = useMemo(() => {
+    const txs = filterByMonths(transactions, from, to)
+    return rawExpenseByCategory(txs, rawMonthlyRows(txs, from, to))
+  }, [transactions, from, to])
 
-  /** スーパーカテゴリー名 → 中身（表示用） */
-  const membersOf = (key: string) =>
-    view.useSuperCategories ? view.superCategories.find((s) => (s.label || s.id) === key)?.members.join('・') : undefined
+  // 並び順と色は全データで決める（期間を変えても変わらないように）
+  const allKeys = useMemo(() => {
+    const ranking = expenseRanking(displayed)
+    return orderKeys(ranking, view.order, ranking)
+  }, [displayed, view.order])
+  const colors = useMemo(
+    () => assignColors(allKeys, view.colors, theme.series, theme.other),
+    [allKeys, view.colors, theme.series, theme.other],
+  )
 
-  const slices: PieSlice[] = keys
-    .map((key) => ({
-      key,
-      label: labelOf(key),
-      value:
-        key === OTHER
-          ? categories.filter((c) => !isIndividual(c.category)).reduce((s, c) => s + c.total, 0)
-          : (categories.find((c) => c.category === key)?.total ?? 0),
-      color: colorOf(key),
-      note: membersOf(key),
-      editable: key !== OTHER,
-    }))
-    .filter((s) => s.value > 0)
+  const items: LegendItem[] = allKeys.flatMap((key) => {
+    const stat = stats.find((s) => s.category === key)
+    if (!stat) return []
+    const sc = view.useSuperCategories ? view.superCategories.find((s) => superLabel(s) === key) : undefined
+    const members = sc && memberStats.filter((m) => sc.members.includes(m.category))
+    return [{ key, color: colors[key], stat, members: members?.length ? members : undefined }]
+  })
 
   const barData = rows.map((r) => {
-    const d: Record<string, number | string> = { month: r.month }
-    for (const key of individually) d[key] = r.expenseByCategory[key] ?? 0
-    d[OTHER] = r.expense - individually.reduce((s, k) => s + (r.expenseByCategory[k] ?? 0), 0)
+    // 0 の項目はツールチップに出さない
+    const d: Record<string, number | string | undefined> = { month: r.month }
+    for (const { key } of items) d[key] = r.expenseByCategory[key] || undefined
     return d
   })
+
+  const setColor = (key: string, color: string) => setView({ ...view, colors: { ...view.colors, [key]: color } })
 
   return (
     <div>
@@ -82,21 +84,6 @@ export function RawOverview({ transactions, from, to }: Props) {
       <p className="muted small">
         CSVの記録をそのまま集計しています（マイナスを支出、プラスを収入として合計）。家賃・貯金・口座移動なども含まれます。
       </p>
-      <div className="row">
-        <label>
-          <input
-            type="checkbox"
-            checked={view.useSuperCategories}
-            onChange={(e) => setView({ ...view, useSuperCategories: e.target.checked })}
-          />
-          スーパーカテゴリーでまとめる
-        </label>
-        {view.useSuperCategories && (
-          <span className="muted small">
-            {view.superCategories.map((s) => s.label).join('、') || 'まだありません（下の「表示の設定」で作れます）'}
-          </span>
-        )}
-      </div>
       <StatTiles
         tiles={[
           { label: '支出 月平均', value: expense.mean, note: `${expense.count}か月` },
@@ -109,8 +96,12 @@ export function RawOverview({ transactions, from, to }: Props) {
       <div className="charts">
         <div>
           <h3>支出のカテゴリー別の割合</h3>
-          <ExpensePie slices={slices} surface={theme.surface} ink={theme.ink} grid={theme.grid} onColorChange={setColor} />
-          <p className="muted small">色見本を押すと色を変えられます。</p>
+          <ExpensePie
+            slices={items.map((i) => ({ key: i.key, label: i.key, value: i.stat.total, color: i.color }))}
+            surface={theme.surface}
+            ink={theme.ink}
+            grid={theme.grid}
+          />
         </div>
         <div>
           <h3>月ごとの支出</h3>
@@ -120,20 +111,20 @@ export function RawOverview({ transactions, from, to }: Props) {
               <XAxis dataKey="month" stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} />
               <YAxis tickFormatter={man} stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} axisLine={false} width={48} />
               <Tooltip
-                formatter={(v, key) => [yen(Number(v)), labelOf(String(key))]}
+                formatter={(v, key) => [yen(Number(v)), key]}
                 itemSorter={(item) => -Number(item.value)}
                 contentStyle={{ background: theme.surface, borderColor: theme.grid, color: theme.ink }}
                 cursor={{ fill: theme.grid, opacity: 0.5 }}
               />
-              {keys.map((key, i) => (
+              {items.map(({ key, color }, i) => (
                 <Bar
                   key={key}
                   dataKey={key}
                   stackId="a"
-                  fill={colorOf(key)}
+                  fill={color}
                   stroke={theme.surface}
                   strokeWidth={1}
-                  radius={i === keys.length - 1 ? [4, 4, 0, 0] : 0}
+                  radius={i === items.length - 1 ? [4, 4, 0, 0] : 0}
                   maxBarSize={28}
                   isAnimationActive={false}
                 />
@@ -152,55 +143,47 @@ export function RawOverview({ transactions, from, to }: Props) {
               />
             </BarChart>
           </ResponsiveContainer>
-          <p className="muted small">色は左の円グラフと同じです。</p>
         </div>
       </div>
 
       <div className="row">
-        <h3>カテゴリー別の支出</h3>
-        <button onClick={() => setShowTable((v) => !v)}>{showTable ? '閉じる' : '表を開く'}</button>
+        <label>
+          <input
+            type="checkbox"
+            checked={view.useSuperCategories}
+            onChange={(e) => setView({ ...view, useSuperCategories: e.target.checked })}
+          />
+          スーパーカテゴリーでまとめる
+        </label>
+        <span className="muted small">
+          表の順番がグラフの順番（棒グラフは下から）です。つまみ（⋮⋮）をドラッグして並べ替え、色見本を押すと色を変えられます。
+          上から{theme.series.length}件に色が付き、残りは灰色になります。
+        </span>
       </div>
-      {showTable && (
-        <table>
-          <thead>
-            <tr>
-              <th>カテゴリー</th>
-              <th className="num">件数</th>
-              <th className="num">期間合計</th>
-              <th className="num">割合</th>
-              <th className="num">月平均</th>
-              <th className="num">月の中央値</th>
-            </tr>
-          </thead>
-          <tbody>
-            {categories.map((c) => (
-              <tr key={c.category}>
-                <td>
-                  <ColorInput
-                    value={colorOf(isIndividual(c.category) ? c.category : OTHER)}
-                    onChange={(color) => setColor(c.category, color)}
-                    title={isIndividual(c.category) ? undefined : '色を選ぶと「その他」から分けて表示します'}
-                  />
-                  {c.category || '（空欄）'}
-                  {membersOf(c.category) && <span className="muted small"> {membersOf(c.category)}</span>}
-                </td>
-                <td className="num">{c.count}</td>
-                <td className="num">{yen(c.total)}</td>
-                <td className="num">{(c.share * 100).toFixed(1)}%</td>
-                <td className="num">{yen(c.monthlyMean)}</td>
-                <td className="num">{yen(c.monthlyMedian)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      <details>
-        <summary>
-          <h3>表示の設定</h3>
-        </summary>
-        <ViewSettings view={view} onChange={setView} onReset={() => setView(defaultView)} categories={originalCategories} />
-      </details>
+      <CategoryLegendTable
+        items={items}
+        onReorder={(moving, target) => setView({ ...view, order: moveKey(allKeys, moving, target) })}
+        onColorChange={setColor}
+        supers={{
+          superCategories: view.superCategories,
+          superIdOf: (c) => superOf(view, c)?.id ?? null,
+          onSelect: (c, id) => setView(assignSuper(view, c, id)),
+          onCreate: (c, label) => setView(createSuper(view, crypto.randomUUID(), label, c)),
+          onRename: (id, label) => setView(renameSuper(view, id, label)),
+          onDelete: (id) => setView(deleteSuper(view, id)),
+        }}
+      />
+      <div className="row">
+        <button onClick={() => setView({ ...view, order: [] })} disabled={!view.order.length}>
+          並び順を初期に戻す（支出の多い順）
+        </button>
+        <button onClick={() => setView({ ...view, colors: {} })} disabled={!Object.keys(view.colors).length}>
+          色を初期に戻す
+        </button>
+        <button onClick={() => confirm('表示の設定（色・並び順・スーパーカテゴリー）を初期状態に戻しますか？') && setView(defaultView)}>
+          表示の設定をすべて初期に戻す
+        </button>
+      </div>
     </div>
   )
 }
