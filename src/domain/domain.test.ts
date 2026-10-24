@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { monthRange, monthlyRows } from './aggregate'
 import { addMonths, classify, splitAmount } from './classify'
+import { harmoniousShades, hexToOklch, oklchToHex, seededRandom } from './colors'
 import { defaultConfig, parseConfig } from './config'
 import { parseCsv, parseDate } from './importers'
 import { expenseRanking, rawExpenseByCategory, rawMonthlyRows } from './raw'
@@ -15,7 +16,9 @@ import {
   moveCategory,
   parseViewConfig,
   reconcileGroups,
+  recolorMembers,
   resizeGroup,
+  setGroupColor,
   sortByTotal,
   ungroup,
   type CategoryGroup,
@@ -261,5 +264,60 @@ describe('view groups', () => {
     const migrated = parseViewConfig({ version: 1, colors: {}, superCategories: [{ id: 's', label: 'S', members: ['A', 'B'] }] })
     expect(migrated.groups).toEqual([{ id: 's', label: 'S', members: ['A', 'B'] }])
     expect(() => parseViewConfig({ version: 2, colors: {}, groups: [{ members: [] }] })).toThrow()
+  })
+})
+
+describe('colors', () => {
+  it('converts hex to OKLCH and back', () => {
+    for (const hex of ['#2a78d6', '#eb6834', '#008300', '#ffffff', '#000000']) {
+      expect(oklchToHex(hexToOklch(hex))).toBe(hex)
+    }
+  })
+
+  it('makes shades with almost the same hue that differ in lightness', () => {
+    const base = hexToOklch('#2a78d6')
+    const shades = harmoniousShades('#2a78d6', 5, seededRandom(1))
+    expect(new Set(shades).size).toBe(5)
+    const lab = shades.map(hexToOklch)
+    for (const c of lab) expect(Math.abs(((c.h - base.h + 540) % 360) - 180)).toBeLessThan(10)
+    const ls = lab.map((c) => c.l).sort((a, b) => a - b)
+    for (let i = 1; i < ls.length; i++) expect(ls[i] - ls[i - 1]).toBeGreaterThan(0.04)
+    // 同じ種なら同じ結果
+    expect(harmoniousShades('#2a78d6', 5, seededRandom(1))).toEqual(shades)
+  })
+
+  it('avoids neighbors that are only one lightness step apart', () => {
+    for (let seed = 0; seed < 20; seed++) {
+      const ls = harmoniousShades('#eb6834', 6, seededRandom(seed)).map((h) => hexToOklch(h).l)
+      const sorted = [...ls].sort((a, b) => a - b)
+      const rank = ls.map((l) => sorted.indexOf(l))
+      for (let i = 1; i < rank.length; i++) expect(Math.abs(rank[i] - rank[i - 1])).toBeGreaterThan(1)
+    }
+  })
+})
+
+describe('group colors', () => {
+  const groups: CategoryGroup[] = [
+    { id: 'x', members: ['A', 'B', 'C'] },
+    { id: 'd', members: ['D'] },
+  ]
+
+  it('assigns similar colors to colorless members when a group gets a color', () => {
+    const r = setGroupColor(groups, {}, 'x', '#2a78d6', seededRandom(3))
+    expect(r.groups[0].color).toBe('#2a78d6')
+    expect(Object.keys(r.colors)).toEqual(['A', 'B', 'C'])
+  })
+
+  it('keeps member colors when some are already set, and skips single groups', () => {
+    expect(setGroupColor(groups, { B: '#111111' }, 'x', '#2a78d6').colors).toEqual({ B: '#111111' })
+    expect(setGroupColor(groups, {}, 'd', '#2a78d6').colors).toEqual({})
+    expect(setGroupColor(groups, {}, 'x', undefined).groups[0]).toEqual({ id: 'x', members: ['A', 'B', 'C'] })
+  })
+
+  it('recolors members on request and shows colorless categories in the group color', () => {
+    const colored = [{ ...groups[0], color: '#eb6834' }, groups[1]]
+    expect(Object.keys(recolorMembers(colored, { A: '#000000' }, 'x', seededRandom(1)))).toEqual(['A', 'B', 'C'])
+    const series = displaySeries(colored, { useSuperCategories: false, colors: { A: '#000000' } })
+    expect(series.map((s) => s.color)).toEqual(['#000000', '#eb6834', '#eb6834', undefined])
   })
 })

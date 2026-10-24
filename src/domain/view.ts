@@ -1,4 +1,5 @@
 import defaultViewJson from '../config/default-view.json'
+import { harmoniousShades, type Random } from './colors'
 
 /**
  * スーパーカテゴリー。表の上で連続したカテゴリーの範囲を1つにまとめる（表示上だけで、集計の加工とは別）。
@@ -198,6 +199,36 @@ export function updateGroup(groups: CategoryGroup[], id: string, patch: Partial<
   })
 }
 
+/** 中身のカテゴリーに、スーパーカテゴリーの色と色相がほぼ同じ色を割り当てる（既存の色は上書き） */
+export function recolorMembers(
+  groups: CategoryGroup[],
+  colors: Record<string, string>,
+  id: string,
+  random?: Random,
+): Record<string, string> {
+  const g = groups.find((x) => x.id === id)
+  if (!g?.color) return colors
+  const shades = harmoniousShades(g.color, g.members.length, random)
+  return { ...colors, ...Object.fromEntries(g.members.map((m, i) => [m, shades[i]])) }
+}
+
+/**
+ * スーパーカテゴリーの色を変える。2件以上まとめていて中身がすべて無色なら、中身にも似た色を割り当てる
+ */
+export function setGroupColor(
+  groups: CategoryGroup[],
+  colors: Record<string, string>,
+  id: string,
+  color: string | undefined,
+  random?: Random,
+): { groups: CategoryGroup[]; colors: Record<string, string> } {
+  const next = updateGroup(groups, id, { color })
+  const g = next.find((x) => x.id === id)
+  const allColorless = g ? g.members.every((m) => !colors[m]) : false
+  if (!color || !g || g.members.length < 2 || !allColorless) return { groups: next, colors }
+  return { groups: next, colors: recolorMembers(next, colors, id, random) }
+}
+
 /** グループのまとめを解いて、中身を1件ずつにする */
 export function ungroup(groups: CategoryGroup[], id: string, uid: IdGenerator): CategoryGroup[] {
   return groups.flatMap((g) => (g.id === id ? g.members.map((m, i) => (i === 0 ? { id: g.id, members: [m] } : { id: uid(), members: [m] })) : [g]))
@@ -222,7 +253,8 @@ export interface DisplaySeries {
 
 export function displaySeries(groups: CategoryGroup[], view: Pick<ViewConfig, 'useSuperCategories' | 'colors'>): DisplaySeries[] {
   if (!view.useSuperCategories) {
-    return flatten(groups).map((c) => ({ key: c, label: c, color: view.colors[c], members: [c] }))
+    // 無色のカテゴリーは、スーパーカテゴリーの色で表示する
+    return groups.flatMap((g) => g.members.map((c) => ({ key: c, label: c, color: view.colors[c] ?? g.color, members: [c] })))
   }
   return groups.map((g) => ({
     key: g.id,
