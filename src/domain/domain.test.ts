@@ -3,8 +3,10 @@ import { monthRange, monthlyRows } from './aggregate'
 import { addMonths, classify, splitAmount } from './classify'
 import { defaultConfig, parseConfig } from './config'
 import { parseCsv, parseDate } from './importers'
+import { rawExpenseByCategory, rawMonthlyRows, topExpenseCategories } from './raw'
 import { median, seriesStats } from './stats'
 import type { ClassifyConfig, Rule } from './types'
+import { applyDisplayNames, assignColors, defaultView, parseViewConfig, type ViewConfig } from './view'
 
 const csv = `金額,日付,メモ,カテゴリー名
 -1000,2026/01/05,スーパー,食費
@@ -139,5 +141,59 @@ describe('config', () => {
 
   it('rejects broken configs', () => {
     expect(() => parseConfig({ version: 2, groups: [{ id: 'a', role: 'nope' }], categoryGroup: {}, rules: [] })).toThrow()
+  })
+})
+
+describe('raw (no processing)', () => {
+  const txs = parseCsv(csv).transactions
+  const rows = rawMonthlyRows(txs, '2026-01', '2026-03')
+
+  it('sums expenses and income by sign only', () => {
+    expect(rows.map((r) => [r.expense, r.income])).toEqual([
+      [66000, 200000],
+      [58000, 0],
+      [800, 500],
+    ])
+  })
+
+  it('computes per-category monthly mean, median, and share', () => {
+    const food = rawExpenseByCategory(txs, rows).find((c) => c.category === '食費')!
+    expect(food).toMatchObject({ count: 3, total: 6800, monthlyMedian: 800 })
+    expect(food.monthlyMean).toBeCloseTo(6800 / 3)
+    expect(food.share).toBeCloseTo(6800 / 124800)
+  })
+
+  it('picks top categories from all data', () => {
+    expect(topExpenseCategories(txs, 2)).toEqual(['家賃', '貯蓄'])
+  })
+})
+
+describe('view', () => {
+  const txs = parseCsv(csv).transactions
+  const view: ViewConfig = {
+    version: 1,
+    useSuperCategories: true,
+    colors: {},
+    superCategories: [{ id: 's', label: '住まいと食', members: ['食費', '家賃'] }],
+  }
+
+  it('merges categories into super categories only when enabled', () => {
+    expect(applyDisplayNames(txs, view).map((t) => t.category)).toContain('住まいと食')
+    expect(applyDisplayNames(txs, { ...view, useSuperCategories: false })).toEqual(txs)
+    const rows = rawMonthlyRows(applyDisplayNames(txs, view), '2026-01', '2026-01')
+    expect(rows[0].expenseByCategory).toEqual({ 住まいと食: 66000 })
+  })
+
+  it('keeps chosen colors and fills the rest from the palette without duplicates', () => {
+    expect(assignColors(['a', 'b', 'c'], { b: '#111111' }, ['#111111', '#222222', '#333333'])).toEqual({
+      a: '#222222',
+      b: '#111111',
+      c: '#333333',
+    })
+  })
+
+  it('loads the default view file and rejects broken ones', () => {
+    expect(defaultView.version).toBe(1)
+    expect(() => parseViewConfig({ version: 1, colors: {}, superCategories: [{ members: [] }] })).toThrow()
   })
 })

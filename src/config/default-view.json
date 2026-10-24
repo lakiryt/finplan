@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "useSuperCategories": false,
+  "colors": {},
+  "order": [],
+  "superCategories": [
+    { "id": "food", "label": "食費", "members": ["食料品", "外食"] },
+    { "id": "living-costs", "label": "光熱・通信", "members": ["水道光熱費", "通信費"] }
+  ]
+}

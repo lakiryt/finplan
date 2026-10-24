@@ -4,7 +4,9 @@ import { ClassifySettings } from './components/ClassifySettings'
 import { FileImport } from './components/FileImport'
 import { MonthlyChart } from './components/MonthlyChart'
 import { RentBudget } from './components/RentBudget'
-import { SummaryTiles } from './components/SummaryTiles'
+import { yen } from './components/format'
+import { RawOverview } from './components/RawOverview'
+import { StatTiles } from './components/StatTiles'
 import { categorySummaries, filterByMonths, monthOf, monthRange, monthlyRows } from './domain/aggregate'
 import { classify } from './domain/classify'
 import { defaultConfig, parseConfig } from './domain/config'
@@ -77,14 +79,39 @@ export default function App() {
             </button>
           </div>
         )}
+        {initial && (
+          <div className="row">
+            <label>
+              期間
+              <select value={from} onChange={(e) => setPeriod({ from: e.target.value, to })}>
+                {initial.available.filter((m) => m <= to).map((m) => (
+                  <option key={m}>{m}</option>
+                ))}
+              </select>
+            </label>
+            〜
+            <select value={to} onChange={(e) => setPeriod({ from, to: e.target.value })}>
+              {initial.available.filter((m) => m >= from).map((m) => (
+                <option key={m}>{m}</option>
+              ))}
+            </select>
+            <button onClick={() => setPeriod(null)}>初期の期間に戻す</button>
+            <span className="muted small">以下のすべての集計に使われます</span>
+          </div>
+        )}
       </section>
 
       {transactions.length > 0 && initial && (
         <>
           <section>
+            <h2>2. そのまま見る（加工なし）</h2>
+            <RawOverview transactions={transactions} from={from} to={to} />
+          </section>
+
+          <section>
             <details open={unassignedCount > 0}>
               <summary>
-                <h2>2. 分類の設定</h2>
+                <h2>3. 分類の設定</h2>
                 {unassignedCount > 0 && <span className="badge">未分類 {unassignedCount}件</span>}
               </summary>
               <ClassifySettings
@@ -98,25 +125,15 @@ export default function App() {
           </section>
 
           <section>
-            <h2>3. 生活費の実績（家賃を除く）</h2>
-            <div className="row">
-              <label>
-                期間
-                <select value={from} onChange={(e) => setPeriod({ from: e.target.value, to })}>
-                  {initial.available.filter((m) => m <= to).map((m) => (
-                    <option key={m}>{m}</option>
-                  ))}
-                </select>
-              </label>
-              〜
-              <select value={to} onChange={(e) => setPeriod({ from, to: e.target.value })}>
-                {initial.available.filter((m) => m >= from).map((m) => (
-                  <option key={m}>{m}</option>
-                ))}
-              </select>
-              <button onClick={() => setPeriod(null)}>初期の期間に戻す</button>
-            </div>
-            <SummaryTiles living={livingStats} income={incomeStats} />
+            <h2>4. 生活費の実績（家賃を除く）</h2>
+            <StatTiles
+              tiles={[
+                { label: '生活費 月平均', value: livingStats.mean, note: `${livingStats.count}か月` },
+                { label: '生活費 中央値', value: livingStats.median, note: '大きな出費の影響を受けにくい' },
+                { label: '生活費 直近6か月平均', value: livingStats.recent[6], note: `直近3か月 ${yen(livingStats.recent[3])}` },
+                { label: '収入 月平均', value: incomeStats.mean, note: `直近6か月 ${yen(incomeStats.recent[6])}` },
+              ]}
+            />
             <MonthlyChart rows={rows} groups={livingGroups} allGroups={config.groups} average={livingStats.mean} />
             <details>
               <summary>
@@ -127,7 +144,7 @@ export default function App() {
           </section>
 
           <section>
-            <h2>4. 家賃の目安</h2>
+            <h2>5. 家賃の目安</h2>
             <RentBudget living={livingStats} />
           </section>
         </>

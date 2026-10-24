@@ -7,8 +7,8 @@ const series = {
 }
 
 const chrome = {
-  light: { surface: '#fcfcfb', grid: '#e1e0d9', axis: '#c3c2b7', muted: '#898781', ink: '#0b0b0b' },
-  dark: { surface: '#1a1a19', grid: '#2c2c2a', axis: '#383835', muted: '#898781', ink: '#f0efec' },
+  light: { other: '#b5b3ab', surface: '#fcfcfb', grid: '#e1e0d9', axis: '#c3c2b7', muted: '#898781', ink: '#0b0b0b' },
+  dark: { other: '#6b6a64', surface: '#1a1a19', grid: '#2c2c2a', axis: '#383835', muted: '#898781', ink: '#f0efec' },
 }
 
 const query = '(prefers-color-scheme: dark)'

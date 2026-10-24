@@ -41,12 +41,25 @@ CSV → importers → Transaction[] → classify（ルール → カテゴリー
 | `src/domain/importers.ts` | CSV形式ごとの列の対応（`importProfiles`） |
 | `src/domain/classify.ts` | ルールの判定と適用。按分はここで月ごとの取引に展開する |
 | `src/domain/aggregate.ts` | 月別・カテゴリー別の集計。取引の無い月も 0 として数える |
+| `src/domain/raw.ts` | 加工なしの集計（ルール・グループを使わず、カテゴリーと金額の符号だけで数える） |
 | `src/domain/stats.ts` | 平均・中央値・直近 n か月の平均 |
 | `src/domain/config.ts` | 設定の検証と旧形式からの移行（`parseConfig`） |
-| `src/config/default-config.json` | 初期設定（グループ・カテゴリーの割り当て・ルール） |
+| `src/domain/view.ts` | 表示の設定（色・スーパーカテゴリー）。集計の加工とは独立 |
+| `src/config/default-config.json` | 分類の初期設定（グループ・カテゴリーの割り当て・ルール） |
+| `src/config/default-view.json` | 表示の初期設定（スーパーカテゴリーなど） |
 | `src/state/storage.ts` | localStorage への保存（失敗しても動く） |
 | `src/components/` | 画面部品 |
 | `scripts/inspect.ts` | 実データを画面を開かずに確認するスクリプト |
+
+### 画面の流れ
+
+1. データ（CSVの読み込み、全体で共通の期間）
+2. そのまま見る（加工なし）: 円グラフ・棒グラフ・平均・中央値。まずここで全体をつかむ
+3. 分類の設定: 加工（ルール）を足していく
+4. 生活費の実績: 加工を反映した結果
+5. 家賃の目安
+
+設定の画面は分かりやすく作り直す予定（加工を「モジュール」として追加・削除・無効化し、2. の数字がどう変わるかを見せる形）。
 
 ### ルールの意味
 
