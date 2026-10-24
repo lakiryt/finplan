@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
 import { ClassifySettings } from './components/ClassifySettings'
 import { FileImport } from './components/FileImport'
+import { ProcessingCards } from './components/ProcessingCards'
 import { RentBudget } from './components/RentBudget'
 import { RawOverview } from './components/RawOverview'
 import { filterByMonths, monthOf, monthRange, monthlyRows } from './domain/aggregate'
 import { classify } from './domain/classify'
-import { initialConfig } from './config/initial'
+import { initialConfig, initialProcessing } from './config/initial'
 import { parseConfig } from './domain/config'
+import { parseProcessingConfig, type ProcessingConfig } from './domain/processing'
 import { seriesStats } from './domain/stats'
 import type { ClassifyConfig, Transaction } from './domain/types'
 import { removeStored, useStoredState } from './state/storage'
@@ -31,6 +33,7 @@ function defaultPeriod(txs: Transaction[]) {
 export default function App() {
   const [transactions, setTransactions] = useStoredState<Transaction[]>(TX_KEY, [])
   const [config, setConfig] = useStoredState<ClassifyConfig>('finplan.config', initialConfig, parseConfig)
+  const [processing, setProcessing] = useStoredState<ProcessingConfig>('finplan.processing', initialProcessing, parseProcessingConfig)
   const initial = useMemo(() => defaultPeriod(transactions), [transactions])
   const [period, setPeriod] = useState<{ from: string; to: string } | null>(null)
   const from = period?.from ?? initial?.from ?? ''
@@ -96,14 +99,17 @@ export default function App() {
       {transactions.length > 0 && initial && (
         <>
           <section>
-            <h2>2. そのまま見る（加工なし）</h2>
-            <RawOverview transactions={transactions} from={from} to={to} />
+            <h2>2. 支出と収入</h2>
+            <RawOverview transactions={transactions} processing={processing} from={from} to={to} />
           </section>
 
           <section>
-            <details open={unassignedCount > 0}>
+            <h2>3. 加工</h2>
+            <p className="muted small">カードを有効にすると、2. の集計に反映されます。</p>
+            <ProcessingCards config={processing} onChange={setProcessing} transactions={transactions} />
+            <details open={unassignedCount > 0} className="subsection">
               <summary>
-                <h2>3. 分類の設定</h2>
+                <h3>分類の設定（4. 家賃の目安で使う）</h3>
                 {unassignedCount > 0 && <span className="badge">未分類 {unassignedCount}件</span>}
               </summary>
               <ClassifySettings

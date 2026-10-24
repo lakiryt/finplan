@@ -16,6 +16,8 @@ export interface LegendRow {
   stat: RawCategoryStat
   /** 未設定なら無色 */
   color?: string
+  /** 3. の加工で除いている場合の説明（行を薄くして添える） */
+  excluded?: string
 }
 
 interface Props {
@@ -123,7 +125,7 @@ export function CategoryLegendTable(props: Props) {
                 key={row.category}
                 ref={rowRef(row.category)}
                 data-index={i}
-                className={`${reorder.rowClass(row.category)} ${opacityOf(i) < 1 ? `fade fade-${i - VISIBLE + 1}` : ''}`}
+                className={`${reorder.rowClass(row.category)} ${opacityOf(i) < 1 ? `fade fade-${i - VISIBLE + 1}` : ''} ${row.excluded ? 'excluded' : ''}`}
                 {...reorder.rowProps(row.category)}
               >
                 <td className="handle" title="ドラッグして並べ替え" {...reorder.handleProps(row.category)}>
@@ -137,6 +139,7 @@ export function CategoryLegendTable(props: Props) {
                     title={`${row.category}の色（無色ならスーパーカテゴリーの色で表示）`}
                   />
                   {row.category || '（空欄）'}
+                  {row.excluded && <span className="excluded-note">{row.excluded}</span>}
                 </td>
                 <td className="num">{row.stat.count}</td>
                 <td className="num">{yen(row.stat.total)}</td>

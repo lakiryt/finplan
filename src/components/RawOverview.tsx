@@ -5,6 +5,7 @@ import { emptyCategoryStat, expenseRanking, expenseTotals, rawExpenseByCategory,
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
 import { flatten, reconcileGroups, sortByTotal } from '../domain/groups'
+import { applyProcessing, excludedCategories, hasActiveModule, type ProcessingConfig } from '../domain/processing'
 import {
   categoryColorsInUse,
   changeGroups,
@@ -27,7 +28,10 @@ import { RawCharts } from './RawCharts'
 import { StatTiles } from './StatTiles'
 
 interface Props {
+  /** 加工する前の全取引 */
   transactions: Transaction[]
+  /** 3. の加工。有効なカードを当てはめてから集計する */
+  processing: ProcessingConfig
   from: string
   to: string
 }
@@ -35,7 +39,7 @@ interface Props {
 const uid = () => crypto.randomUUID()
 
 /** 加工なしの概要。CSVのカテゴリーと金額の符号だけで集計する（スーパーカテゴリーは表示上のまとめ） */
-export function RawOverview({ transactions, from, to }: Props) {
+export function RawOverview({ transactions, processing, from, to }: Props) {
   const theme = useChartTheme()
   const [view, saveView] = useStoredState<ViewConfig>('finplan.view', initialView, parseViewConfig)
   // 表示の設定の変更はすべてここを通し、元に戻せるようにする
@@ -44,13 +48,17 @@ export function RawOverview({ transactions, from, to }: Props) {
   /** 書き出す画面に出している設定（開いた時点のもの） */
   const [exporting, setExporting] = useState<ViewConfig | null>(null)
 
-  const inPeriod = useMemo(() => filterByMonths(transactions, from, to), [transactions, from, to])
+  const processed = useMemo(() => applyProcessing(transactions, processing), [transactions, processing])
+  const excluded = useMemo(() => excludedCategories(processing), [processing])
+  const realIncome = hasActiveModule(processing, 'excludeIncome')
+  const realExpense = hasActiveModule(processing, 'excludeExpense')
+  const inPeriod = useMemo(() => filterByMonths(processed, from, to), [processed, from, to])
   const rows = useMemo(() => rawMonthlyRows(inPeriod, from, to), [inPeriod, from, to])
   const stats = useMemo(() => new Map(rawExpenseByCategory(inPeriod, rows).map((s) => [s.category, s])), [inPeriod, rows])
   const expense = seriesStats(rows.map((r) => r.expense))
   const income = seriesStats(rows.map((r) => r.income))
 
-  // 表の行は、全データで支出のあるカテゴリーすべて（期間を変えても表が動かないように）
+  // 表の行は、加工する前の全データで支出のあるカテゴリーすべて（期間や加工を変えても表が動かないように）
   const totals = useMemo(() => expenseTotals(transactions), [transactions])
   const groups = useMemo(() => reconcileGroups(view.groups, expenseRanking(totals)), [view.groups, totals])
   // 編集はすべて、データに合わせた後の設定を元にする
@@ -59,6 +67,7 @@ export function RawOverview({ transactions, from, to }: Props) {
     category: c,
     stat: stats.get(c) ?? emptyCategoryStat(c),
     color: view.colors[c],
+    excluded: excluded.expense.has(c) ? '実支出から除外中' : undefined,
   }))
 
   // グラフは重いので、系列とデータは関係する値が変わったときだけ作り直す
@@ -92,14 +101,17 @@ export function RawOverview({ transactions, from, to }: Props) {
     <UndoSessionContext.Provider value={session}>
       <div>
         <p className="muted small">
-          CSVの記録をそのまま集計しています（マイナスを支出、プラスを収入として合計）。家賃・貯金・口座移動なども含まれます。
+          マイナスの記録を支出、プラスの記録を収入として合計しています。
+          {realIncome || realExpense
+            ? `3. の加工（${[realIncome && '実収入', realExpense && '実支出'].filter(Boolean).join('・')}）を反映しています。`
+            : '3. の加工はまだ反映していません（貯金・口座移動なども含まれます）。'}
         </p>
         <StatTiles
           tiles={[
-            { label: '支出 月平均', value: expense.mean, note: `${expense.count}か月` },
-            { label: '支出 中央値', value: expense.median, note: `最小 ${yen(expense.min)} / 最大 ${yen(expense.max)}` },
-            { label: '収入 月平均', value: income.mean },
-            { label: '収入 中央値', value: income.median },
+            { label: `${realExpense ? '実支出' : '支出'} 月平均`, value: expense.mean, note: `${expense.count}か月` },
+            { label: `${realExpense ? '実支出' : '支出'} 中央値`, value: expense.median, note: `最小 ${yen(expense.min)} / 最大 ${yen(expense.max)}` },
+            { label: `${realIncome ? '実収入' : '収入'} 月平均`, value: income.mean },
+            { label: `${realIncome ? '実収入' : '収入'} 中央値`, value: income.median },
           ]}
         />
 
