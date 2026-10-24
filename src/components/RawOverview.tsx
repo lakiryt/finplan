@@ -136,7 +136,8 @@ export function RawOverview({ transactions, from, to }: Props) {
         >
           色をすべて消す
         </button>
-        <button onClick={() => confirm('表示の設定（色・並び順・スーパーカテゴリー）を初期状態に戻しますか？') && setView(initialView)}>
+        {/* 元に戻せるので、確認は出さない */}
+        <button onClick={() => setView(initialView)}>
           表示の設定をすべて初期に戻す
         </button>
         {/* 並び順をすべて残すため、データに合わせた後の設定を書き出す */}
