@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
-import { expenseRanking, rawExpenseByCategory, rawMonthlyRows, type RawCategoryStat } from '../domain/raw'
+import { emptyCategoryStat, expenseRanking, expenseTotals, rawExpenseByCategory, rawMonthlyRows } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
 import {
@@ -47,10 +47,13 @@ export function RawOverview({ transactions, from, to }: Props) {
   const income = seriesStats(rows.map((r) => r.income))
 
   // 表の行は、全データで支出のあるカテゴリーすべて（期間を変えても表が動かないように）
-  const ranking = useMemo(() => expenseRanking(transactions), [transactions])
-  const groups = useMemo(() => reconcileGroups(view.groups, ranking), [view.groups, ranking])
-  const zero = (category: string): RawCategoryStat => ({ category, count: 0, total: 0, monthlyMean: 0, monthlyMedian: 0, share: 0 })
-  const legendRows: LegendRow[] = flatten(groups).map((c) => ({ category: c, stat: stats.get(c) ?? zero(c), color: view.colors[c] }))
+  const totals = useMemo(() => expenseTotals(transactions), [transactions])
+  const groups = useMemo(() => reconcileGroups(view.groups, expenseRanking(totals)), [view.groups, totals])
+  const legendRows: LegendRow[] = flatten(groups).map((c) => ({
+    category: c,
+    stat: stats.get(c) ?? emptyCategoryStat(c),
+    color: view.colors[c],
+  }))
 
   // グラフは重いので、系列とデータは関係する値が変わったときだけ作り直す
   const { useSuperCategories, colors } = view
@@ -90,12 +93,6 @@ export function RawOverview({ transactions, from, to }: Props) {
       alert(`表示の設定を読み込めませんでした: ${e instanceof Error ? e.message : e}`)
     }
   }
-
-  const totals = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const t of transactions) if (t.amount < 0) m.set(t.category, (m.get(t.category) ?? 0) - t.amount)
-    return m
-  }, [transactions])
 
   return (
     <div>

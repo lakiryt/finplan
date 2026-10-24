@@ -4,7 +4,7 @@ import { addMonths, classify, splitAmount } from './classify'
 import { BASIC_COLORS, harmoniousShades, hexToOklch, oklchToHex, seededRandom } from './colors'
 import { defaultConfig, parseConfig } from './config'
 import { parseCsv, parseDate } from './importers'
-import { expenseRanking, rawExpenseByCategory, rawMonthlyRows } from './raw'
+import { expenseRanking, expenseTotals, rawExpenseByCategory, rawMonthlyRows } from './raw'
 import { median, seriesStats } from './stats'
 import type { ClassifyConfig, Rule } from './types'
 import {
@@ -182,7 +182,7 @@ describe('raw (no processing)', () => {
   })
 
   it('ranks categories by total expense', () => {
-    expect(expenseRanking(txs)).toEqual(['家賃', '貯蓄', '食費'])
+    expect(expenseRanking(expenseTotals(txs))).toEqual(['家賃', '貯蓄', '食費'])
   })
 })
 

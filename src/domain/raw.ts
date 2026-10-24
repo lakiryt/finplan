@@ -63,12 +63,27 @@ export function rawExpenseByCategory(txs: Transaction[], rows: RawMonth[]): RawC
     .sort((a, b) => b.total - a.total)
 }
 
-/**
- * 全データでの支出合計の多い順に並べたカテゴリー名。
- * 期間を変えても並び（と色）が変わらないよう、表示順の初期値にはこれを使う。
- */
-export function expenseRanking(txs: Transaction[]): string[] {
+/** その期間に支出が無かったカテゴリーの集計（表の行を期間によって増減させないため） */
+export const emptyCategoryStat = (category: string): RawCategoryStat => ({
+  category,
+  count: 0,
+  total: 0,
+  monthlyMean: 0,
+  monthlyMedian: 0,
+  share: 0,
+})
+
+/** カテゴリーごとの支出の合計（プラスの金額） */
+export function expenseTotals(txs: Transaction[]): Map<string, number> {
   const totals = new Map<string, number>()
   for (const tx of txs) if (tx.amount < 0) totals.set(tx.category, (totals.get(tx.category) ?? 0) - tx.amount)
+  return totals
+}
+
+/**
+ * 支出合計の多い順に並べたカテゴリー名。
+ * 期間を変えても並び（と色）が変わらないよう、表示順の初期値には全データでのこの順を使う。
+ */
+export function expenseRanking(totals: Map<string, number>): string[] {
   return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c)
 }

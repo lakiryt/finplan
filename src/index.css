@@ -90,11 +90,6 @@ button:disabled { opacity: 0.4; cursor: default; }
 .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 .row h3 { margin: 0; }
 
-.chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  border: 1px solid var(--border); border-radius: 999px; padding: 0 4px 0 10px; font-size: 0.85rem;
-}
-.chip button { border: none; padding: 0 6px; background: none; }
 
 .legend-table { position: relative; }
 .legend-table td.handle { cursor: grab; color: var(--muted); user-select: none; width: 1.5em; text-align: center; }
@@ -111,13 +106,6 @@ button:disabled { opacity: 0.4; cursor: default; }
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); padding: 4px; display: grid; gap: 2px;
 }
-.popover-row { display: flex; gap: 4px; align-items: center; }
-.popover-row > button:not(.popover-item) { border: none; background: none; padding: 2px 6px; }
-.popover-item { flex: 1; text-align: left; border: none; background: none; }
-.popover-item:hover, .popover-item.selected { background: var(--page); }
-.popover-item.selected { font-weight: 600; }
-.popover-row.new { border-top: 1px solid var(--line); padding-top: 4px; margin-top: 2px; }
-.popover-row.new input { flex: 1; min-width: 0; }
 
 
 /* 表の横のスーパーカテゴリーのバー。1件だけなら真ん丸、まとめると縦につながる */
