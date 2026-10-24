@@ -125,12 +125,15 @@ function OffsetCard({
   update: (patch: ModulePatch) => void
 }) {
   const candidates = incomeCard?.categories ?? []
-  const targetOf = new Map(m.pairs.map((p) => [p.from, p.to]))
-  const active = candidates.filter((c) => targetOf.get(c))
+  const pairOf = new Map(m.pairs.map((p) => [p.from, p]))
+  const active = candidates.filter((c) => pairOf.get(c)?.enabled && pairOf.get(c)?.to)
   const offsetTotal = active.reduce((s, c) => s + (totals.income.get(c) ?? 0), 0)
   const targets = rankByTotal(totals.expense)
-  const setTarget = (from: string, to: string) =>
-    update({ pairs: to ? [...m.pairs.filter((p) => p.from !== from), { from, to }] : m.pairs.filter((p) => p.from !== from) })
+  // チェックを外しても差し引く先は覚えておく（もう一度チェックしたときに戻る）
+  const setPair = (from: string, patch: { enabled?: boolean; to?: string }) => {
+    const current = pairOf.get(from) ?? { from, enabled: false, to: '' }
+    update({ pairs: [...m.pairs.filter((p) => p.from !== from), { ...current, ...patch }] })
+  }
 
   return (
     <Card
@@ -140,26 +143,31 @@ function OffsetCard({
       info={<OffsetInfo />}
       summary={`${active.length}件を支出から差し引く（全期間で${yen(offsetTotal)}）`}
     >
-      <p className="muted small">実収入から除いたもののうち、支出の打ち消しにあたるもの（割り勘の回収・返金・ポイントなど）を、どの支出から差し引くか選びます。</p>
+      <p className="muted small">実収入から除いたもののうち、支出の打ち消しにあたるもの（割り勘の回収・返金・ポイントなど）にチェックを入れ、どの支出から差し引くかを選びます。</p>
       {!incomeCard?.enabled && <p className="small warn-text">実収入のカードが無効なので、相殺も反映されません。</p>}
       {candidates.length === 0 ? (
         <p className="muted small">実収入のカードで除くカテゴリーを選ぶと、ここに並びます。</p>
       ) : (
         <div className="card-options">
-          {candidates.map((c) => (
-            <div key={c} className="card-option offset-option">
-              <span>{c || '（空欄）'}</span>
-              <span className="muted small num">{amountLabel(totals.income, c)}</span>
-              <select value={targetOf.get(c) ?? ''} onChange={(e) => setTarget(c, e.target.value)} aria-label={`${c}を差し引く支出`}>
-                <option value="">差し引かない（除くだけ）</option>
-                {targets.map((t) => (
-                  <option key={t} value={t}>
-                    {t}から差し引く
-                  </option>
-                ))}
-              </select>
-            </div>
-          ))}
+          {candidates.map((c) => {
+            const pair = pairOf.get(c)
+            const on = Boolean(pair?.enabled)
+            return (
+              <div key={c} className="card-option offset-option">
+                <input type="checkbox" checked={on} onChange={(e) => setPair(c, { enabled: e.target.checked })} aria-label={`${c}を支出から差し引く`} />
+                <span>{c || '（空欄）'}</span>
+                <span className="muted small num">{amountLabel(totals.income, c)}</span>
+                <select value={pair?.to ?? ''} disabled={!on} onChange={(e) => setPair(c, { to: e.target.value })} aria-label={`${c}を差し引く支出`}>
+                  <option value="">差し引く支出を選ぶ</option>
+                  {targets.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )
+          })}
         </div>
       )}
     </Card>

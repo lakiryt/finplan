@@ -21,7 +21,7 @@ const config: ProcessingConfig = {
     { id: 'off', type: 'offset', enabled: false, pairs: [] },
   ],
 }
-const withOffset = (to: string, base = config) => updateModule(base, 'off', { enabled: true, pairs: [{ from: '回収', to }] })
+const withOffset = (to: string, base = config, on = true) => updateModule(base, 'off', { enabled: true, pairs: [{ from: '回収', enabled: on, to }] })
 const noExpenseCard = (c: ProcessingConfig) => updateModule(c, 'exp', { enabled: false })
 
 describe('processing', () => {
@@ -77,6 +77,12 @@ describe('offset (相殺)', () => {
     expect(offsetTargets(notExcluded).size).toBe(0)
     expect(applyProcessing(txs, noExpenseCard(notExcluded)).find((t) => t.memo === '割り勘 半額')?.category).toBe('回収')
     expect(hasActiveModule(withOffset('食費', updateModule(config, 'inc', { enabled: false })), 'offset')).toBe(false)
+  })
+
+  it('just excludes when the row is unchecked, keeping the chosen target', () => {
+    const unchecked = withOffset('食費', config, false)
+    expect(offsetTargets(unchecked).size).toBe(0)
+    expect(applyProcessing(txs, unchecked).some((t) => t.memo === '割り勘 半額')).toBe(false)
   })
 
   it('just excludes when no target is chosen, and drops offsets into excluded expenses', () => {

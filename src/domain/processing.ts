@@ -19,9 +19,13 @@ export interface ExcludeModule {
   categories: string[]
 }
 
-/** 収入側のカテゴリー from の記録を、支出側のカテゴリー to から差し引く。to が空なら差し引かない（除くだけ） */
+/**
+ * 収入側のカテゴリー from の記録を、支出側のカテゴリー to から差し引く。
+ * enabled が false なら差し引かない（除くだけ）。to は覚えておき、もう一度有効にしたときに使う
+ */
 export interface OffsetPair {
   from: string
+  enabled: boolean
   to: string
 }
 
@@ -54,9 +58,9 @@ function parseModule(m: RawModule): ProcessingModule {
     return { id: m.id, type: m.type, enabled: Boolean(m.enabled), categories: strings(m.categories) }
   }
   if (m.type === 'offset' && Array.isArray(m.pairs)) {
-    const pairs = (m.pairs as { from?: unknown; to?: unknown }[])
+    const pairs = (m.pairs as { from?: unknown; enabled?: unknown; to?: unknown }[])
       .filter((p) => typeof p?.from === 'string')
-      .map((p) => ({ from: p.from as string, to: typeof p.to === 'string' ? p.to : '' }))
+      .map((p) => ({ from: p.from as string, enabled: Boolean(p.enabled), to: typeof p.to === 'string' ? p.to : '' }))
     return { id: m.id, type: 'offset', enabled: Boolean(m.enabled), pairs }
   }
   throw new Error(`未対応のカードです: ${String(m.type)}`)
@@ -90,7 +94,7 @@ export function offsetTargets(config: ProcessingConfig): Map<string, string> {
   const { income } = excludedCategories(config)
   const map = new Map<string, string>()
   for (const m of config.modules) {
-    if (m.enabled && m.type === 'offset') for (const p of m.pairs) if (p.to && income.has(p.from)) map.set(p.from, p.to)
+    if (m.enabled && m.type === 'offset') for (const p of m.pairs) if (p.enabled && p.to && income.has(p.from)) map.set(p.from, p.to)
   }
   return map
 }
