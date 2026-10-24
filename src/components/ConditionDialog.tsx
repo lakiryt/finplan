@@ -6,8 +6,22 @@ import { yen } from './format'
 import { SIDE_LABEL, type RuleDraft } from './ruleText'
 
 const ANY = '__any__'
-/** 一覧に出す件数の上限（新しい順） */
+/** 一覧に出す件数の上限（並べ替えた後の上位） */
 const RESULT_LIMIT = 200
+
+type SortKey = 'date' | 'amount' | 'category' | 'memo'
+interface Sort {
+  key: SortKey
+  desc: boolean
+}
+
+/** 一覧の列。金額は大きさで比べる（支出のマイナスも、金額の大きい順に並ぶように） */
+const COLUMNS: { key: SortKey; label: string; num?: boolean; compare: (a: Transaction, b: Transaction) => number }[] = [
+  { key: 'date', label: '日付', num: true, compare: (a, b) => a.date.localeCompare(b.date) },
+  { key: 'amount', label: '金額', num: true, compare: (a, b) => Math.abs(a.amount) - Math.abs(b.amount) },
+  { key: 'category', label: 'カテゴリー', compare: (a, b) => a.category.localeCompare(b.category, 'ja') },
+  { key: 'memo', label: 'メモ', compare: (a, b) => a.memo.localeCompare(b.memo, 'ja') },
+]
 
 interface Props {
   /** 相殺なら差し引く先も選ぶ */
@@ -59,9 +73,17 @@ function ConditionEditor({
   close,
 }: Omit<Props, 'initial' | 'onClose'> & { initial: RuleDraft; close: () => void }) {
   const [draft, setDraft] = useState<RuleDraft>(initial)
+  // 一覧の並び順。見出しを押すとその列で並べ替え、同じ見出しをもう一度押すと昇順・降順を入れ替える
+  const [sort, setSort] = useState<Sort>({ key: 'date', desc: true })
   const c = draft.when
   const setWhen = (patch: Partial<Condition>) => setDraft({ ...draft, when: { ...c, ...patch } })
-  const hit = hasCriteria(c) ? transactions.filter((t) => matches(c, t)).sort((a, b) => b.date.localeCompare(a.date)) : []
+  const column = COLUMNS.find((col) => col.key === sort.key)!
+  const hit = hasCriteria(c)
+    ? transactions.filter((t) => matches(c, t)).sort((a, b) => (sort.desc ? -1 : 1) * column.compare(a, b) || b.date.localeCompare(a.date))
+    : []
+  const toggleSort = (key: SortKey) =>
+    // 日付・金額は新しい順・大きい順から、文字の列は五十音順から始める
+    setSort((cur) => (cur.key === key ? { key, desc: !cur.desc } : { key, desc: key === 'date' || key === 'amount' }))
   const total = hit.reduce((s, t) => s + Math.abs(t.amount), 0)
   const other = opposite(c.side)
 
@@ -169,6 +191,19 @@ function ConditionEditor({
         {hit.length > 0 && (
           <div className="results-scroll">
             <table>
+              <thead>
+                <tr>
+                  {COLUMNS.map((col) => (
+                    <th key={col.key} className={col.num ? 'num' : undefined} aria-sort={sort.key === col.key ? (sort.desc ? 'descending' : 'ascending') : 'none'}>
+                      <button className="sort-button" onClick={() => toggleSort(col.key)}>
+                        {col.label}
+                        <span className="sort-mark">{sort.key === col.key ? (sort.desc ? '▼' : '▲') : ''}</span>
+                      </button>
+                    </th>
+                  ))}
+                  <th />
+                </tr>
+              </thead>
               <tbody>
                 {hit.slice(0, RESULT_LIMIT).map((t) => (
                   <tr key={t.id}>

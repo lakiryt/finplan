@@ -242,6 +242,10 @@ button:disabled { opacity: 0.4; cursor: default; }
 .results-scroll table { display: table; width: 100%; }
 .results-memo { white-space: normal; }
 .condition-results button.pin { font-size: 0.8rem; padding: 1px 8px; white-space: nowrap; }
+.results-scroll thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.sort-button { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; }
+.sort-button:hover { color: var(--accent); }
+.sort-mark { display: inline-block; width: 1em; font-size: 0.75em; margin-left: 2px; }
 .condition-editor .editor-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .condition-editor label { display: inline-flex; align-items: center; gap: 4px; }
 .condition-editor select.unset { color: var(--muted); }
