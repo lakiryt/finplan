@@ -1,16 +1,14 @@
 import { useMemo, useState } from 'react'
-import { ClassifySettings } from './components/ClassifySettings'
 import { FileImport } from './components/FileImport'
 import { ProcessingCards } from './components/ProcessingCards'
 import { RentBudget } from './components/RentBudget'
 import { RawOverview } from './components/RawOverview'
-import { filterByMonths, monthOf, monthRange, monthlyRows } from './domain/aggregate'
-import { classify } from './domain/classify'
-import { initialConfig, initialProcessing } from './config/initial'
-import { parseConfig } from './domain/config'
-import { parseProcessingConfig, type ProcessingConfig } from './domain/processing'
+import { initialProcessing } from './config/initial'
+import { filterByMonths, monthOf, monthRange } from './domain/aggregate'
+import { applyProcessing, parseProcessingConfig, type ProcessingConfig } from './domain/processing'
+import { rawMonthlyRows } from './domain/raw'
 import { seriesStats } from './domain/stats'
-import type { ClassifyConfig, Transaction } from './domain/types'
+import type { Transaction } from './domain/types'
 import { removeStored, useStoredState } from './state/storage'
 
 const TX_KEY = 'finplan.transactions'
@@ -32,19 +30,18 @@ function defaultPeriod(txs: Transaction[]) {
 
 export default function App() {
   const [transactions, setTransactions] = useStoredState<Transaction[]>(TX_KEY, [])
-  const [config, setConfig] = useStoredState<ClassifyConfig>('finplan.config', initialConfig, parseConfig)
   const [processing, setProcessing] = useStoredState<ProcessingConfig>('finplan.processing', initialProcessing, parseProcessingConfig)
   const initial = useMemo(() => defaultPeriod(transactions), [transactions])
   const [period, setPeriod] = useState<{ from: string; to: string } | null>(null)
   const from = period?.from ?? initial?.from ?? ''
   const to = period?.to ?? initial?.to ?? ''
 
-  const classified = useMemo(() => classify(transactions, config), [transactions, config])
-  const inPeriod = useMemo(() => filterByMonths(classified, from, to), [classified, from, to])
-  // 家賃の目安に使う生活費（分類の設定を反映したもの）
-  const rows = useMemo(() => (from && to ? monthlyRows(inPeriod, from, to) : []), [inPeriod, from, to])
-  const livingStats = useMemo(() => seriesStats(rows.map((r) => r.living)), [rows])
-  const unassignedCount = classified.filter((t) => !t.groupId).length
+  // 家賃の目安に使う生活費は、2. と同じ加工後の支出
+  const livingStats = useMemo(() => {
+    if (!from || !to) return seriesStats([])
+    const rows = rawMonthlyRows(filterByMonths(applyProcessing(transactions, processing), from, to), from, to)
+    return seriesStats(rows.map((r) => r.expense))
+  }, [transactions, processing, from, to])
 
   return (
     <main>
@@ -106,28 +103,15 @@ export default function App() {
           <section>
             <h2>3. 加工</h2>
             <div className="row">
-              <span className="muted small">カードを有効にすると、2. の集計に反映されます。</span>
+              <span className="muted small">工程ごとに条件を足していくと、2. と 4. に反映されます。</span>
               <button onClick={() => confirm('加工の設定を初期状態に戻しますか？') && setProcessing(initialProcessing)}>加工の設定を初期に戻す</button>
             </div>
             <ProcessingCards config={processing} onChange={setProcessing} transactions={transactions} />
-            <details open={unassignedCount > 0} className="subsection">
-              <summary>
-                <h3>分類の設定（4. 家賃の目安で使う）</h3>
-                {unassignedCount > 0 && <span className="badge">未分類 {unassignedCount}件</span>}
-              </summary>
-              <ClassifySettings
-                config={config}
-                onChange={setConfig}
-                onReset={() => setConfig(initialConfig)}
-                transactions={transactions}
-                classified={classified}
-              />
-            </details>
           </section>
 
           <section>
             <h2>4. 家賃の目安</h2>
-            <p className="muted small">生活費は、分類の設定で「生活費」の役割にしたグループの合計です（家賃は含みません）。</p>
+            <p className="muted small">生活費は、2. の支出（3. の加工後）です。家賃を除いた生活費にするには、3. の相殺で家賃を収入から差し引きます。</p>
             <RentBudget living={livingStats} />
           </section>
         </>

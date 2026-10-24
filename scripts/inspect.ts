@@ -1,14 +1,15 @@
 /**
- * 実データを画面を開かずに確認するためのスクリプト。
+ * 実データを画面を開かずに確認するためのスクリプト。3. の加工（除外・相殺）を当てはめて集計する。
  *   npm run inspect -- <csv> [--config <json>] [--from YYYY-MM] [--to YYYY-MM] [--category <名前>] [--memo <文字>]
- * --category / --memo を付けると、ルール適用後のその取引の一覧を出す（ルールを作る前の確認用）
+ * --config を省くと src/config/local/default-processing.json（無ければ一般的な初期設定）を使う。
+ * --category / --memo を付けると、当てはまる記録と、それぞれに加工で何が起きるかの一覧を出す（条件を作る前の確認用）
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
-import { categorySummaries, filterByMonths, monthOf, monthlyRows } from '../src/domain/aggregate'
-import { classify, isActive, matchesRule } from '../src/domain/classify'
-import { defaultConfig, parseConfig } from '../src/domain/config'
+import { filterByMonths, monthOf } from '../src/domain/aggregate'
 import { parseCsv } from '../src/domain/importers'
+import { applyProcessing, defaultProcessing, hasCriteria, matches, outcomeOf, parseProcessingConfig } from '../src/domain/processing'
+import { rawCategoryStats, rawMonthlyRows } from '../src/domain/raw'
 import { seriesStats } from '../src/domain/stats'
 
 const { values, positionals } = parseArgs({
@@ -28,44 +29,52 @@ if (!file) {
   process.exit(1)
 }
 
-const { transactions, errors } = parseCsv(readFileSync(file, 'utf8'))
-// 画面と同じく、src/config/local/ に個人の設定があればそれを初期値にする
-const LOCAL_CONFIG = 'src/config/local/default-config.json'
+const LOCAL_CONFIG = 'src/config/local/default-processing.json'
 const configPath = values.config ?? (existsSync(LOCAL_CONFIG) ? LOCAL_CONFIG : undefined)
-const config = configPath ? parseConfig(JSON.parse(readFileSync(configPath, 'utf8'))) : defaultConfig
-const classified = classify(transactions, config)
+const config = configPath ? parseProcessingConfig(JSON.parse(readFileSync(configPath, 'utf8'))) : defaultProcessing
+
+const { transactions, errors } = parseCsv(readFileSync(file, 'utf8'))
 const months = [...new Set(transactions.map((t) => monthOf(t.date)))].sort()
 const from = values.from ?? months[0]
 const to = values.to ?? months[months.length - 1]
-const inPeriod = filterByMonths(classified, from, to)
+const inPeriod = filterByMonths(transactions, from, to)
 const fmt = (n: number) => Math.round(n).toLocaleString('ja-JP')
 
 if (values.category || values.memo) {
-  const hits = inPeriod.filter(
-    (t) => (!values.category || t.category === values.category || t.originalCategory === values.category) && (!values.memo || t.memo.includes(values.memo)),
-  )
+  const hits = inPeriod.filter((t) => (!values.category || t.category === values.category) && (!values.memo || t.memo.includes(values.memo)))
   console.log(`# 一致 ${hits.length}件（${from}〜${to}）`)
-  for (const t of hits) console.log([t.date, fmt(t.amount), t.originalCategory, '→', t.category, t.groupId ?? '未分類', t.memo].join('\t'))
+  for (const t of hits) {
+    const o = outcomeOf(t, config)
+    const what = o.kind === 'keep' ? '残す' : o.kind === 'exclude' ? '除外' : o.moved ? `相殺 → ${o.moved.side === 'income' ? '収入' : '支出'}「${o.moved.category}」` : '相殺（差し引く先が除外中なので除く）'
+    console.log([t.date, fmt(t.amount), t.category, what, t.memo].join('\t'))
+  }
   process.exit(0)
 }
 
-const rows = monthlyRows(inPeriod, from, to)
-const living = seriesStats(rows.map((r) => r.living))
+const processed = applyProcessing(inPeriod, config)
+const rows = rawMonthlyRows(processed, from, to)
+const expense = seriesStats(rows.map((r) => r.expense))
+const income = seriesStats(rows.map((r) => r.income))
 
-console.log(`# ${file}: ${transactions.length}件（読み込めなかった行 ${errors.length}） 期間 ${from}〜${to}`)
-console.log(`未分類: ${classified.filter((t) => !t.groupId).length}件`)
-console.log(`生活費 平均 ${fmt(living.mean)} / 中央値 ${fmt(living.median)} / 直近3・6・12か月 ${[3, 6, 12].map((n) => fmt(living.recent[n])).join(' / ')}`)
+console.log(`# ${file}: ${transactions.length}件（読み込めなかった行 ${errors.length}） 期間 ${from}〜${to} 設定 ${configPath ?? '一般的な初期設定'}`)
+console.log(`支出 平均 ${fmt(expense.mean)} / 中央値 ${fmt(expense.median)} / 直近3・6・12か月 ${[3, 6, 12].map((n) => fmt(expense.recent[n])).join(' / ')}`)
+console.log(`収入 平均 ${fmt(income.mean)} / 中央値 ${fmt(income.median)}`)
+console.log(`累積収支 ${fmt(rows.reduce((s, r) => s + r.income - r.expense, 0))}`)
 
-console.log('\n## 月別（生活費 / 住居費 / 収入）')
-for (const r of rows) console.log([r.month, fmt(r.living), fmt(r.housing), fmt(r.income)].join('\t'))
+console.log('\n## 月別（支出 / 収入 / 収支）')
+for (const r of rows) console.log([r.month, fmt(r.expense), fmt(r.income), fmt(r.income - r.expense)].join('\t'))
 
-console.log('\n## 生活費のカテゴリー別 月平均')
-for (const s of categorySummaries(inPeriod.filter((t) => t.role === 'living'), rows.length)) {
-  console.log([s.category, s.groupId, fmt(s.monthlyMean), `${s.count}件`].join('\t'))
-}
+console.log('\n## 支出のカテゴリー別 月平均')
+for (const s of rawCategoryStats(processed, rows, 'expense')) console.log([s.category, fmt(s.monthlyMean), `${s.count}件`].join('\t'))
 
-console.log('\n## ルールの一致件数（全期間）')
-for (const r of config.rules) {
-  const n = isActive(r) ? transactions.filter((t) => matchesRule(r.match, t)).length : 0
-  console.log([r.enabled ? 'on ' : 'off', `${n}件`, r.id, r.label].join('\t'))
+console.log('\n## 条件ごとの当たる件数（期間内）')
+for (const [step, rules] of [
+  ['除外', config.exclude.rules],
+  ['相殺', config.offset.rules],
+] as const) {
+  for (const r of rules) {
+    const hit = hasCriteria(r.when) ? inPeriod.filter((t) => matches(r.when, t)) : []
+    const total = hit.reduce((s, t) => s + Math.abs(t.amount), 0)
+    console.log([step, r.enabled ? 'on ' : 'off', `${hit.length}件`, fmt(total), JSON.stringify(r.when), 'target' in r ? `→ ${r.target || '指定なし'}` : ''].join('\t'))
+  }
 }

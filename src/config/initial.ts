@@ -1,4 +1,3 @@
-import { defaultConfig, parseConfig } from '../domain/config'
 import { defaultProcessing, parseProcessingConfig } from '../domain/processing'
 import { defaultView, parseViewConfig } from '../domain/view'
 
@@ -17,6 +16,5 @@ function pick<T>(name: string, parse: (raw: unknown) => T, fallback: T): T {
   return raw ? parse(raw) : fallback
 }
 
-export const initialConfig = pick('default-config.json', parseConfig, defaultConfig)
 export const initialView = pick('default-view.json', parseViewConfig, defaultView)
 export const initialProcessing = pick('default-processing.json', parseProcessingConfig, defaultProcessing)

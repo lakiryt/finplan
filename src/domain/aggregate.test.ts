@@ -1,18 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { monthRange, monthlyRows } from './aggregate'
-import { classify } from './classify'
-import { parseCsv } from './importers'
+import { filterByMonths, monthRange } from './aggregate'
 import { median, seriesStats } from './stats'
-import { config, csv } from './testData'
 
-describe('aggregate & stats', () => {
-  const txs = classify(parseCsv(csv).transactions, config)
-
-  it('fills empty months, excludes rent, and nets refunds against living costs', () => {
-    const rows = monthlyRows(txs, '2026-01', '2026-03')
-    expect(rows.map((r) => r.living)).toEqual([6000, 8000, 300])
-    expect(rows[0].housing).toBe(60000)
-    expect(rows[0].income).toBe(200000)
+describe('months & stats', () => {
+  it('filters records by month range', () => {
+    const txs = [{ date: '2025-12-31' }, { date: '2026-01-01' }, { date: '2026-02-28' }, { date: '2026-03-01' }]
+    expect(filterByMonths(txs, '2026-01', '2026-02').map((t) => t.date)).toEqual(['2026-01-01', '2026-02-28'])
   })
 
   it('lists months across a year boundary', () => {

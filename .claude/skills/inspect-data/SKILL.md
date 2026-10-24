@@ -1,6 +1,6 @@
 ---
 name: inspect-data
-description: 利用者の実際の家計簿CSV（csv/）を、画面を開かずに集計・確認する手順。生活費の数字を確かめたい、ルールを作る前に対象の取引を見たい、平均が不自然な月の原因を探したい、といったときに使う。
+description: 利用者の実際の家計簿CSV（csv/）を、画面を開かずに集計・確認する手順。生活費の数字を確かめたい、加工の条件を作る前に対象の記録を見たい、平均が不自然な月の原因を探したい、といったときに使う。
 ---
 
 # 実データを確認する
@@ -10,25 +10,23 @@ description: 利用者の実際の家計簿CSV（csv/）を、画面を開かず
 ## 使うコマンド
 
 ```sh
-# 全体の集計（月別の生活費・住居費・収入、カテゴリー別の月平均、ルールごとの一致件数）
+# 全体の集計（3. の加工を当てはめた支出・収入・累積収支、月別、支出のカテゴリー別の月平均、条件ごとの当たる件数と金額）
 npm run inspect -- csv/<file>.csv --from 2023-10 --to 2026-09
 
-# ルールを適用した後の、特定のカテゴリー・メモの取引一覧（ルールを作る前の確認）
+# 特定のカテゴリー・メモの記録と、それぞれに加工で何が起きるか（残す・除外・相殺 → どこへ）の一覧（条件を作る前の確認）
 npm run inspect -- csv/<file>.csv --category 家賃
 npm run inspect -- csv/<file>.csv --memo ホテル --from 2025-01
 
-# 書き出した設定ファイルで集計する（既定は src/config/local/default-config.json、無ければ src/config/default-config.json）
-npm run inspect -- csv/<file>.csv --config path/to/finplan-config.json
+# 別の加工の設定ファイルで集計する（既定は src/config/local/default-processing.json、無ければ一般的な初期設定）
+npm run inspect -- csv/<file>.csv --config path/to/processing.json
 ```
-
-`--category` は、元のカテゴリーと付け替え後のカテゴリーのどちらに一致しても表示する。
 
 ## 確認の進め方
 
-1. 全体の集計で、生活費が突出している月を探す。
-2. その月の大きな取引を探す（例: `grep "YYYY/MM/" csv/<file>.csv | sort -t, -k1,1n | head`）。
-3. どう扱うか（除外・按分・付け替え）は利用者が決める。機能が足りなければ `add-analysis-feature` スキルに進む。
-4. ルールを足したら、もう一度 `npm run inspect` で一致件数と数字の変化を確かめ、利用者に報告する。
+1. 全体の集計で、支出が突出している月を探す。
+2. その月の大きな記録を探す（例: `grep "YYYY/MM/" csv/<file>.csv | sort -t, -k1,1n | head`）。
+3. どう扱うか（除外・相殺・按分など）は利用者が決める。工程や条件の項目が足りなければ `add-analysis-feature` スキルに進む。
+4. 条件を足したら、もう一度 `npm run inspect` で当たる件数と数字の変化を確かめ、利用者に報告する。
 
 ## 注意
 

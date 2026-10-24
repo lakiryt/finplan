@@ -3,7 +3,7 @@ import { colorDistance, harmoniousShades, type Random } from './colors'
 import { groupLabel, updateGroup, type CategoryGroup } from './groups'
 import type { Side } from './raw'
 
-/** 表示の設定。分類の設定（ClassifyConfig）とは独立している */
+/** 表示の設定（並び順・大分類・色）。集計の加工（3. の除外・相殺）とは独立している */
 export interface ViewConfig {
   version: 2
   /** グラフを大分類単位で表示するか（表は変わらない） */
