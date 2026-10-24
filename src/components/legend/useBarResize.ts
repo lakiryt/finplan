@@ -39,7 +39,7 @@ interface Options {
 }
 
 /**
- * スーパーカテゴリーのバーをドラッグして範囲を変える。ドラッグ中はプレビューを返し、離したときに確定する。
+ * 大分類のバーをドラッグして範囲を変える。ドラッグ中はプレビューを返し、離したときに確定する。
  * バーのどこを押してもドラッグでき、範囲の外へ動かすとそこまで伸び、端の行を押して内側へ動かすとその端が縮む
  */
 export function useBarResize({ categories, groups, onCommit, uid, wrapRef, pullBus }: Options) {

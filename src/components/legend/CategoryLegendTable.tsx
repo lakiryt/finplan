@@ -27,9 +27,9 @@ interface Props {
   onGroupsChange: (groups: CategoryGroup[]) => void
   onColorChange: (category: string, color: string | undefined) => void
   onGroupColorChange: (groupId: string, color: string | undefined) => void
-  /** 中身のカテゴリーにスーパーカテゴリーと似た色を割り当て直す */
+  /** 中身のカテゴリーに大分類と似た色を割り当て直す */
   onRecolorMembers: (groupId: string) => void
-  /** 色の選択に出す使用中の色（カテゴリーとスーパーカテゴリーで別々） */
+  /** 色の選択に出す使用中の色（カテゴリーと大分類で別々） */
   categoryColorsInUse: string[]
   groupColorsInUse: string[]
   /** 色が未設定のときの色 */
@@ -44,7 +44,7 @@ const FADE_OPACITY = [0.45, 0.15]
 
 /**
  * グラフの凡例を兼ねるカテゴリー別の表。
- * 左のつまみで行を並べ替え、表の横のバーでスーパーカテゴリー（連続した行のまとめ）を作る
+ * 左のつまみで行を並べ替え、表の横のバーで大分類（連続した行のまとめ）を作る
  */
 export function CategoryLegendTable(props: Props) {
   const { rows, groups, onGroupsChange, onColorChange, onGroupColorChange, onRecolorMembers, categoryColorsInUse, groupColorsInUse, gray, uid } = props
@@ -116,7 +116,7 @@ export function CategoryLegendTable(props: Props) {
               <th className="num">割合</th>
               <th className="num">月平均</th>
               <th className="num">月の中央値</th>
-              <th className="super-head">スーパーカテゴリー</th>
+              <th className="super-head">大分類</th>
             </tr>
           </thead>
           <tbody>
@@ -136,7 +136,7 @@ export function CategoryLegendTable(props: Props) {
                     value={row.color}
                     onChange={(c) => onColorChange(row.category, c)}
                     inUse={categoryColorsInUse}
-                    title={`${row.category}の色（無色ならスーパーカテゴリーの色で表示）`}
+                    title={`${row.category}の色（無色なら大分類の色で表示）`}
                   />
                   {row.category || '（空欄）'}
                   {row.excluded && <span className="excluded-note">{row.excluded}</span>}

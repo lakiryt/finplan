@@ -6,7 +6,7 @@ import type { Side } from './raw'
 /** 表示の設定。分類の設定（ClassifyConfig）とは独立している */
 export interface ViewConfig {
   version: 2
-  /** グラフをスーパーカテゴリー単位で表示するか（表は変わらない） */
+  /** グラフを大分類単位で表示するか（表は変わらない） */
   useSuperCategories: boolean
   /** カテゴリー名 → 色（#rrggbb）。未設定は灰色 */
   colors: Record<string, string>
@@ -55,7 +55,7 @@ export function fromSide(base: ViewConfig, side: Side, edited: ViewConfig): View
 // ---- 表示の設定の変更（どれも新しい ViewConfig を返す）----
 // groups は reconcileGroups でデータに合わせた後のものを渡す（全カテゴリーがどこかのグループに入っている前提）
 
-/** グループ（並び順・まとめ）を変える。色付きのスーパーカテゴリーに無色のカテゴリーが加わったら似た色を割り当てる */
+/** グループ（並び順・まとめ）を変える。色付きの大分類に無色のカテゴリーが加わったら似た色を割り当てる */
 export function changeGroups(view: ViewConfig, groups: CategoryGroup[], random?: Random): ViewConfig {
   return { ...view, groups, colors: colorJoinedMembers(view.groups, groups, view.colors, random) }
 }
@@ -68,7 +68,7 @@ export function setCategoryColor(view: ViewConfig, category: string, color: stri
   return { ...view, colors }
 }
 
-/** スーパーカテゴリーの色を変える。2件以上まとめていて中身がすべて無色なら、中身にも似た色を割り当てる */
+/** 大分類の色を変える。2件以上まとめていて中身がすべて無色なら、中身にも似た色を割り当てる */
 export function setGroupColor(view: ViewConfig, id: string, color: string | undefined, random?: Random): ViewConfig {
   const next = { ...view, groups: updateGroup(view.groups, id, { color }) }
   const g = next.groups.find((x) => x.id === id)
@@ -76,7 +76,7 @@ export function setGroupColor(view: ViewConfig, id: string, color: string | unde
   return recolorMembers(next, id, random)
 }
 
-/** 中身のカテゴリーに、スーパーカテゴリーの色と色相がほぼ同じ色を割り当てる（既存の色は上書き）。1件だけなら同じ色 */
+/** 中身のカテゴリーに、大分類の色と色相がほぼ同じ色を割り当てる（既存の色は上書き）。1件だけなら同じ色 */
 export function recolorMembers(view: ViewConfig, id: string, random?: Random): ViewConfig {
   const g = view.groups.find((x) => x.id === id)
   if (!g?.color) return view
@@ -84,7 +84,7 @@ export function recolorMembers(view: ViewConfig, id: string, random?: Random): V
   return { ...view, colors: { ...view.colors, ...Object.fromEntries(g.members.map((m, i) => [m, shades[i]])) } }
 }
 
-/** カテゴリーとスーパーカテゴリーの色をすべて消す */
+/** カテゴリーと大分類の色をすべて消す */
 export function clearColors(view: ViewConfig): ViewConfig {
   return { ...view, colors: {}, groups: view.groups.map(({ id, label, members }) => (label ? { id, label, members } : { id, members })) }
 }
@@ -103,7 +103,7 @@ export interface DisplaySeries {
 export function displaySeries(view: Pick<ViewConfig, 'useSuperCategories' | 'colors' | 'groups'>): DisplaySeries[] {
   const { groups, colors } = view
   if (!view.useSuperCategories) {
-    // 無色のカテゴリーは、スーパーカテゴリーの色で表示する
+    // 無色のカテゴリーは、大分類の色で表示する
     return groups.flatMap((g) => g.members.map((c) => ({ key: c, label: c, color: colors[c] ?? g.color, members: [c] })))
   }
   return groups.map((g) => ({
@@ -121,13 +121,13 @@ export function categoryColorsInUse(view: Pick<ViewConfig, 'colors'>): string[] 
   return uniqueColors(Object.values(view.colors))
 }
 
-/** スーパーカテゴリーに設定されている色（スーパーカテゴリーの色を選ぶときの候補） */
+/** 大分類に設定されている色（大分類の色を選ぶときの候補） */
 export function groupColorsInUse(view: Pick<ViewConfig, 'groups'>): string[] {
   return uniqueColors(view.groups.map((g) => g.color))
 }
 
 /**
- * 色付きのスーパーカテゴリーに新しく加わった無色のカテゴリーに、似た色を割り当てる。
+ * 色付きの大分類に新しく加わった無色のカテゴリーに、似た色を割り当てる。
  * 似た色の候補の中から、すでにいる中身の色と一番離れたものを順に選ぶ（見分けやすくするため）
  */
 function colorJoinedMembers(

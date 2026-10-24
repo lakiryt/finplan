@@ -45,11 +45,11 @@ CSV → importers → Transaction[] → classify（ルール → カテゴリー
 | `src/domain/raw.ts` | 加工なしの集計（ルール・グループを使わず、カテゴリーと金額の符号だけで数える） |
 | `src/domain/stats.ts` | 平均・中央値・直近 n か月の平均 |
 | `src/domain/config.ts` | 設定の検証と旧形式からの移行（`parseConfig`） |
-| `src/domain/groups.ts` | スーパーカテゴリー（表の上で連続した範囲）の編集。並び順とまとめだけを扱う |
+| `src/domain/groups.ts` | 大分類（表の上で連続した範囲）の編集。並び順とまとめだけを扱う |
 | `src/domain/view.ts` | 表示の設定（色・グラフの系列）。変更は「設定を受け取って新しい設定を返す」関数にする。集計の加工とは独立 |
-| `src/domain/colors.ts` | 色の計算（OKLCH）。スーパーカテゴリーの色から中身に似た色を作る |
+| `src/domain/colors.ts` | 色の計算（OKLCH）。大分類の色から中身に似た色を作る |
 | `src/config/default-config.json` | 分類の一般的な初期設定（グループ・カテゴリーの割り当て・ルール） |
-| `src/config/default-view.json` | 表示の一般的な初期設定（スーパーカテゴリーなど） |
+| `src/config/default-view.json` | 表示の一般的な初期設定（大分類など） |
 | `src/config/initial.ts` | 画面で使う初期設定を決める（開発サーバーでは `local/` を優先） |
 | `src/state/storage.ts` | localStorage への保存（失敗しても動く） |
 | `src/components/` | 画面部品 |

@@ -53,7 +53,7 @@ function balanceMonths(rows: RawMonth[]): BalanceMonth[] {
   })
 }
 
-/** 2. 支出と収入。カードで支出・収入・収支を切り替え、グラフと表（スーパーカテゴリー）で中身を見る */
+/** 2. 支出と収入。カードで支出・収入・収支を切り替え、グラフと表（大分類）で中身を見る */
 export function RawOverview({ transactions, processing, from, to }: Props) {
   const theme = useChartTheme()
   const [view, saveView] = useStoredState<ViewConfig>('finplan.view', initialView, parseViewConfig)
@@ -194,10 +194,10 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
                   checked={view.useSuperCategories}
                   onChange={(e) => edit({ ...current, useSuperCategories: e.target.checked })}
                 />
-                グラフをスーパーカテゴリーでまとめる
+                グラフを大分類でまとめる
               </label>
               <span className="muted small">
-                表の順番がグラフの順番（棒グラフは下から）です。左のつまみ（⋮⋮）で並べ替え、右のバーの端をドラッグするか ↑↓ でスーパーカテゴリーにまとめます。
+                表の順番がグラフの順番（棒グラフは下から）です。左のつまみ（⋮⋮）で並べ替え、右のバーの端をドラッグするか ↑↓ で大分類にまとめます。
               </span>
             </div>
             <CategoryLegendTable

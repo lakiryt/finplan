@@ -105,7 +105,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 
 
-/* 表の横のスーパーカテゴリーのバー。1件だけなら真ん丸、まとめると縦につながる */
+/* 表の横の大分類のバー。1件だけなら真ん丸、まとめると縦につながる */
 .legend-table td.super-cell { position: relative; width: 104px; min-width: 104px; padding: 0; border-bottom: none; }
 .legend-table th.super-head { border-bottom: none; padding-left: 20px; font-size: 0.8rem; }
 /* 表の上に重ねる層（SuperBlobs）。見た目だけで、押す・ドラッグするのは下のセルの透明な領域 */

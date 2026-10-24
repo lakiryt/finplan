@@ -12,7 +12,7 @@ interface Props {
   close: () => void
 }
 
-/** スーパーカテゴリーのバーを押したときの窓の中身。名前・色・中身の確認・まとめの解除 */
+/** 大分類のバーを押したときの窓の中身。名前・色・中身の確認・まとめの解除 */
 export function GroupEditor({ group: g, onLabelChange, onColorChange, onRecolorMembers, onUngroup, colorsInUse, close }: Props) {
   const multiple = g.members.length > 1
   return (
