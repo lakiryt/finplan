@@ -10,10 +10,16 @@ import type { Transaction } from './types'
 export type Side = 'expense' | 'income'
 
 /**
- * 取引が支出側か収入側か。0円の記録はどちらでもない（null）。
+ * 金額の符号から、支出側か収入側か。0円の記録はどちらでもない（null）。
  * 0円を収入側に数えると、支出のカテゴリーが収入の表に0円の行として紛れ込むため
  */
 export const sideOf = (amount: number): Side | null => (amount < 0 ? 'expense' : amount > 0 ? 'income' : null)
+
+/** 取引が支出側か収入側か。加工で明示されていればそれを使う（相殺など） */
+export const txSide = (tx: Transaction): Side | null => (tx.amount === 0 ? null : (tx.side ?? sideOf(tx.amount)))
+
+/** その側として数える金額。支出側はマイナスの金額を足す（相殺したプラスの記録は支出を減らす） */
+const signedFor = (tx: Transaction, side: Side) => (side === 'expense' ? -tx.amount : tx.amount)
 
 export interface RawMonth {
   month: string
@@ -41,9 +47,9 @@ export function rawMonthlyRows(txs: Transaction[], from: string, to: string): Ra
   for (const tx of txs) {
     const row = rows.get(monthOf(tx.date))
     if (!row) continue
-    const side = sideOf(tx.amount)
+    const side = txSide(tx)
     if (!side) continue
-    const amount = Math.abs(tx.amount)
+    const amount = signedFor(tx, side)
     row[side] += amount
     row.byCategory[side][tx.category] = (row.byCategory[side][tx.category] ?? 0) + amount
   }
@@ -53,7 +59,7 @@ export function rawMonthlyRows(txs: Transaction[], from: string, to: string): Ra
 /** 支出側（または収入側）のカテゴリー別の集計（期間合計の多い順） */
 export function rawCategoryStats(txs: Transaction[], rows: RawMonth[], side: Side): RawCategoryStat[] {
   const counts = new Map<string, number>()
-  for (const tx of txs) if (sideOf(tx.amount) === side) counts.set(tx.category, (counts.get(tx.category) ?? 0) + 1)
+  for (const tx of txs) if (txSide(tx) === side) counts.set(tx.category, (counts.get(tx.category) ?? 0) + 1)
   const sideTotal = rows.reduce((s, r) => s + r[side], 0)
 
   return [...counts.entries()]
@@ -85,7 +91,7 @@ export const emptyCategoryStat = (category: string): RawCategoryStat => ({
 /** 支出側（または収入側）のカテゴリーごとの合計（プラスの金額） */
 export function categoryTotals(txs: Transaction[], side: Side): Map<string, number> {
   const totals = new Map<string, number>()
-  for (const tx of txs) if (sideOf(tx.amount) === side) totals.set(tx.category, (totals.get(tx.category) ?? 0) + Math.abs(tx.amount))
+  for (const tx of txs) if (txSide(tx) === side) totals.set(tx.category, (totals.get(tx.category) ?? 0) + signedFor(tx, side))
   return totals
 }
 

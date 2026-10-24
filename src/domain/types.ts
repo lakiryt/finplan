@@ -7,6 +7,11 @@ export interface Transaction {
   amount: number
   memo: string
   category: string
+  /**
+   * 支出側か収入側かを、金額の符号ではなく明示する（加工で付ける）。
+   * 相殺した記録は「支出側・プラスの金額」になり、支出を減らす
+   */
+  side?: 'expense' | 'income'
 }
 
 /**
