@@ -30,3 +30,6 @@ csv/
 
 # Personal context for Claude Code
 CLAUDE.local.md
+
+# Personal default settings (categories etc.)
+src/config/local/

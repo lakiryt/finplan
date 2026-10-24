@@ -3,7 +3,7 @@
  *   npm run inspect -- <csv> [--config <json>] [--from YYYY-MM] [--to YYYY-MM] [--category <名前>] [--memo <文字>]
  * --category / --memo を付けると、ルール適用後のその取引の一覧を出す（ルールを作る前の確認用）
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { categorySummaries, filterByMonths, monthOf, monthlyRows } from '../src/domain/aggregate'
 import { classify, isActive, matchesRule } from '../src/domain/classify'
@@ -29,7 +29,10 @@ if (!file) {
 }
 
 const { transactions, errors } = parseCsv(readFileSync(file, 'utf8'))
-const config = values.config ? parseConfig(JSON.parse(readFileSync(values.config, 'utf8'))) : defaultConfig
+// 画面と同じく、src/config/local/ に個人の設定があればそれを初期値にする
+const LOCAL_CONFIG = 'src/config/local/default-config.json'
+const configPath = values.config ?? (existsSync(LOCAL_CONFIG) ? LOCAL_CONFIG : undefined)
+const config = configPath ? parseConfig(JSON.parse(readFileSync(configPath, 'utf8'))) : defaultConfig
 const classified = classify(transactions, config)
 const months = [...new Set(transactions.map((t) => monthOf(t.date)))].sort()
 const from = values.from ?? months[0]

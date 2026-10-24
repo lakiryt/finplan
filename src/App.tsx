@@ -9,7 +9,8 @@ import { RawOverview } from './components/RawOverview'
 import { StatTiles } from './components/StatTiles'
 import { categorySummaries, filterByMonths, monthOf, monthRange, monthlyRows } from './domain/aggregate'
 import { classify } from './domain/classify'
-import { defaultConfig, parseConfig } from './domain/config'
+import { initialConfig } from './config/initial'
+import { parseConfig } from './domain/config'
 import { seriesStats } from './domain/stats'
 import type { ClassifyConfig, Transaction } from './domain/types'
 import { removeStored, useStoredState } from './state/storage'
@@ -33,7 +34,7 @@ function defaultPeriod(txs: Transaction[]) {
 
 export default function App() {
   const [transactions, setTransactions] = useStoredState<Transaction[]>(TX_KEY, [])
-  const [config, setConfig] = useStoredState<ClassifyConfig>('finplan.config', defaultConfig, parseConfig)
+  const [config, setConfig] = useStoredState<ClassifyConfig>('finplan.config', initialConfig, parseConfig)
   const initial = useMemo(() => defaultPeriod(transactions), [transactions])
   const [period, setPeriod] = useState<{ from: string; to: string } | null>(null)
   const from = period?.from ?? initial?.from ?? ''
@@ -117,7 +118,7 @@ export default function App() {
               <ClassifySettings
                 config={config}
                 onChange={setConfig}
-                onReset={() => setConfig(defaultConfig)}
+                onReset={() => setConfig(initialConfig)}
                 transactions={transactions}
                 classified={classified}
               />

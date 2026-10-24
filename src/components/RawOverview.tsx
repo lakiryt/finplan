@@ -9,7 +9,6 @@ import {
   assignColors,
   assignSuper,
   createSuper,
-  defaultView,
   deleteSuper,
   moveKey,
   orderKeys,
@@ -19,6 +18,7 @@ import {
   superOf,
   type ViewConfig,
 } from '../domain/view'
+import { initialView } from '../config/initial'
 import { useStoredState } from '../state/storage'
 import { CategoryLegendTable, type LegendItem } from './CategoryLegendTable'
 import { PaletteList } from './ColorInput'
@@ -36,7 +36,7 @@ interface Props {
 /** 加工なしの概要。CSVのカテゴリーと金額の符号だけで集計する（スーパーカテゴリーは表示上のまとめ） */
 export function RawOverview({ transactions, from, to }: Props) {
   const theme = useChartTheme()
-  const [view, setView] = useStoredState<ViewConfig>('finplan.view', defaultView, parseViewConfig)
+  const [view, setView] = useStoredState<ViewConfig>('finplan.view', initialView, parseViewConfig)
 
   const displayed = useMemo(() => applyDisplayNames(transactions, view), [transactions, view])
   const inPeriod = useMemo(() => filterByMonths(displayed, from, to), [displayed, from, to])
@@ -180,7 +180,7 @@ export function RawOverview({ transactions, from, to }: Props) {
         <button onClick={() => setView({ ...view, colors: {} })} disabled={!Object.keys(view.colors).length}>
           色を初期に戻す
         </button>
-        <button onClick={() => confirm('表示の設定（色・並び順・スーパーカテゴリー）を初期状態に戻しますか？') && setView(defaultView)}>
+        <button onClick={() => confirm('表示の設定（色・並び順・スーパーカテゴリー）を初期状態に戻しますか？') && setView(initialView)}>
           表示の設定をすべて初期に戻す
         </button>
       </div>
