@@ -1,13 +1,9 @@
 import { useMemo, useState } from 'react'
-import { CategoryTable } from './components/CategoryTable'
 import { ClassifySettings } from './components/ClassifySettings'
 import { FileImport } from './components/FileImport'
-import { MonthlyChart } from './components/MonthlyChart'
 import { RentBudget } from './components/RentBudget'
-import { yen } from './components/format'
 import { RawOverview } from './components/RawOverview'
-import { StatTiles } from './components/StatTiles'
-import { categorySummaries, filterByMonths, monthOf, monthRange, monthlyRows } from './domain/aggregate'
+import { filterByMonths, monthOf, monthRange, monthlyRows } from './domain/aggregate'
 import { classify } from './domain/classify'
 import { initialConfig } from './config/initial'
 import { parseConfig } from './domain/config'
@@ -42,14 +38,9 @@ export default function App() {
 
   const classified = useMemo(() => classify(transactions, config), [transactions, config])
   const inPeriod = useMemo(() => filterByMonths(classified, from, to), [classified, from, to])
+  // 家賃の目安に使う生活費（分類の設定を反映したもの）
   const rows = useMemo(() => (from && to ? monthlyRows(inPeriod, from, to) : []), [inPeriod, from, to])
   const livingStats = useMemo(() => seriesStats(rows.map((r) => r.living)), [rows])
-  const incomeStats = useMemo(() => seriesStats(rows.map((r) => r.income)), [rows])
-  const livingGroups = config.groups.filter((g) => g.role === 'living')
-  const livingSummaries = useMemo(
-    () => categorySummaries(inPeriod.filter((t) => t.role === 'living'), rows.length),
-    [inPeriod, rows.length],
-  )
   const unassignedCount = classified.filter((t) => !t.groupId).length
 
   return (
@@ -126,26 +117,8 @@ export default function App() {
           </section>
 
           <section>
-            <h2>4. 生活費の実績（家賃を除く）</h2>
-            <StatTiles
-              tiles={[
-                { label: '生活費 月平均', value: livingStats.mean, note: `${livingStats.count}か月` },
-                { label: '生活費 中央値', value: livingStats.median, note: '大きな出費の影響を受けにくい' },
-                { label: '生活費 直近6か月平均', value: livingStats.recent[6], note: `直近3か月 ${yen(livingStats.recent[3])}` },
-                { label: '収入 月平均', value: incomeStats.mean, note: `直近6か月 ${yen(incomeStats.recent[6])}` },
-              ]}
-            />
-            <MonthlyChart rows={rows} groups={livingGroups} allGroups={config.groups} average={livingStats.mean} />
-            <details>
-              <summary>
-                <h3>カテゴリー別の内訳</h3>
-              </summary>
-              <CategoryTable summaries={livingSummaries} groups={config.groups} />
-            </details>
-          </section>
-
-          <section>
-            <h2>5. 家賃の目安</h2>
+            <h2>4. 家賃の目安</h2>
+            <p className="muted small">生活費は、分類の設定で「生活費」の役割にしたグループの合計です（家賃は含みません）。</p>
             <RentBudget living={livingStats} />
           </section>
         </>

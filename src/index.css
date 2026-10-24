@@ -87,7 +87,6 @@ button:disabled { opacity: 0.4; cursor: default; }
 
 .charts { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 24px; }
 @media (max-width: 760px) { .charts { grid-template-columns: minmax(0, 1fr); } }
-.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 .row h3 { margin: 0; }
 
 
