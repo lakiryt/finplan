@@ -59,6 +59,8 @@ interface ResizeDrag {
   prefix: string
   /** 別の行まで動かしたか（動かしていなければクリックとして扱う） */
   moved: boolean
+  /** 直前のプレビューの範囲（同じなら描き直さない） */
+  last: string
 }
 
 /**
@@ -106,7 +108,7 @@ export function CategoryLegendTable(props: Props) {
     const g = shownGroups[groupIndexOf.get(categories[rowIndex])!]
     const start = categories.indexOf(g.members[0])
     e.currentTarget.setPointerCapture(e.pointerId)
-    resize.current = { id: g.id, start, end: start + g.members.length - 1, grab: rowIndex, origin: groups, prefix: uid(), moved: false }
+    resize.current = { id: g.id, start, end: start + g.members.length - 1, grab: rowIndex, origin: groups, prefix: uid(), moved: false, last: '' }
   }
 
   /**
@@ -124,6 +126,9 @@ export function CategoryLegendTable(props: Props) {
     else if (t < d.start) a = t
     else if (d.grab === d.end && d.start !== d.end) b = t
     else if (d.grab === d.start && d.start !== d.end) a = t
+    const key = `${a}-${b}`
+    if (key === d.last) return
+    d.last = key
     setPreview(a === d.start && b === d.end ? null : resizeGroup(d.origin, d.id, a, b, seqUid(d.prefix)))
   }
 

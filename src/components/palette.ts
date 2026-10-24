@@ -18,8 +18,13 @@ const subscribe = (cb: () => void) => {
   return () => mq.removeEventListener('change', cb)
 }
 
+/** 明暗それぞれ同じオブジェクトを返す（memo した部品に渡しても描き直しが起きないように） */
+const themes = {
+  light: { series: series.light, ...chrome.light },
+  dark: { series: series.dark, ...chrome.dark },
+}
+
 export function useChartTheme() {
   const dark = useSyncExternalStore(subscribe, () => window.matchMedia(query).matches)
-  const mode = dark ? 'dark' : 'light'
-  return { series: series[mode], ...chrome[mode] }
+  return themes[dark ? 'dark' : 'light']
 }

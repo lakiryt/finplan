@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Popover } from './Popover'
 
 interface Props {
@@ -69,10 +70,30 @@ export function ColorPicker({ value, onChange, palette, inUse, title, allowNone 
           )}
           <label className="picker-custom">
             その他の色
-            <input type="color" value={value ?? '#888888'} onChange={(e) => onChange(e.target.value)} />
+            <CustomColor value={value} onCommit={onChange} />
           </label>
         </div>
       )}
     </Popover>
   )
+}
+
+/**
+ * ブラウザの色選択。React の onChange は選んでいる最中も連続して発生し、そのたびにグラフを描き直すと重いので、
+ * 選び終わったとき（ネイティブの change イベント）だけ反映する
+ */
+function CustomColor({ value, onCommit }: { value?: string; onCommit: (color: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null)
+  const commit = useRef(onCommit)
+  useEffect(() => {
+    commit.current = onCommit
+  })
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const handle = () => commit.current(el.value)
+    el.addEventListener('change', handle)
+    return () => el.removeEventListener('change', handle)
+  }, [])
+  return <input ref={ref} type="color" defaultValue={value ?? '#888888'} />
 }

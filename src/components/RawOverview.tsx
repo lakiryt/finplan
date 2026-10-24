@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
 import { expenseRanking, rawExpenseByCategory, rawMonthlyRows, type RawCategoryStat } from '../domain/raw'
@@ -18,9 +17,9 @@ import {
 } from '../domain/view'
 import { downloadJson, useStoredState } from '../state/storage'
 import { CategoryLegendTable, type LegendRow } from './CategoryLegendTable'
-import { ExpensePie } from './ExpensePie'
-import { man, yen } from './format'
+import { yen } from './format'
 import { useChartTheme } from './palette'
+import { RawCharts } from './RawCharts'
 import { StatTiles } from './StatTiles'
 
 interface Props {
@@ -48,15 +47,25 @@ export function RawOverview({ transactions, from, to }: Props) {
   const zero = (category: string): RawCategoryStat => ({ category, count: 0, total: 0, monthlyMean: 0, monthlyMedian: 0, share: 0 })
   const legendRows: LegendRow[] = flatten(groups).map((c) => ({ category: c, stat: stats.get(c) ?? zero(c), color: view.colors[c] }))
 
-  const series = displaySeries(groups, view)
-    .map((s) => ({ ...s, color: s.color ?? theme.other, total: s.members.reduce((sum, m) => sum + (stats.get(m)?.total ?? 0), 0) }))
-    .filter((s) => s.total > 0)
-  const barData = rows.map((r) => {
-    // 0 の系列はツールチップに出さない
-    const d: Record<string, number | string | undefined> = { month: r.month }
-    series.forEach((s, i) => (d[`s${i}`] = s.members.reduce((sum, m) => sum + (r.expenseByCategory[m] ?? 0), 0) || undefined))
-    return d
-  })
+  // グラフは重いので、系列とデータは関係する値が変わったときだけ作り直す
+  const { useSuperCategories, colors } = view
+  const series = useMemo(
+    () =>
+      displaySeries(groups, { useSuperCategories, colors })
+        .map((s) => ({ ...s, color: s.color ?? theme.other, total: s.members.reduce((sum, m) => sum + (stats.get(m)?.total ?? 0), 0) }))
+        .filter((s) => s.total > 0),
+    [groups, useSuperCategories, colors, stats, theme],
+  )
+  const barData = useMemo(
+    () =>
+      rows.map((r) => {
+        // 0 の系列はツールチップに出さない
+        const d: Record<string, number | string | undefined> = { month: r.month }
+        series.forEach((s, i) => (d[`s${i}`] = s.members.reduce((sum, m) => sum + (r.expenseByCategory[m] ?? 0), 0) || undefined))
+        return d
+      }),
+    [rows, series],
+  )
 
   const setColor = (category: string, color: string | undefined) => {
     const colors = { ...view.colors }
@@ -97,59 +106,7 @@ export function RawOverview({ transactions, from, to }: Props) {
         ]}
       />
 
-      <div className="charts">
-        <div>
-          <h3>支出のカテゴリー別の割合</h3>
-          <ExpensePie
-            slices={series.map((s) => ({ key: s.key, label: s.label, value: s.total, color: s.color }))}
-            surface={theme.surface}
-            ink={theme.ink}
-            grid={theme.grid}
-          />
-        </div>
-        <div>
-          <h3>月ごとの支出</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={barData} margin={{ top: 16, right: 8, bottom: 0, left: 0 }}>
-              <CartesianGrid vertical={false} stroke={theme.grid} />
-              <XAxis dataKey="month" stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} />
-              <YAxis tickFormatter={man} stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} axisLine={false} width={48} />
-              <Tooltip
-                formatter={(v, name) => [yen(Number(v)), name]}
-                itemSorter={(item) => -Number(item.value)}
-                contentStyle={{ background: theme.surface, borderColor: theme.grid, color: theme.ink }}
-                cursor={{ fill: theme.grid, opacity: 0.5 }}
-              />
-              {series.map((s, i) => (
-                <Bar
-                  key={s.key}
-                  dataKey={`s${i}`}
-                  name={s.label}
-                  stackId="a"
-                  fill={s.color}
-                  stroke={theme.surface}
-                  strokeWidth={1}
-                  radius={i === series.length - 1 ? [4, 4, 0, 0] : 0}
-                  maxBarSize={28}
-                  isAnimationActive={false}
-                />
-              ))}
-              <ReferenceLine
-                y={expense.mean}
-                stroke={theme.ink}
-                strokeDasharray="4 4"
-                label={{ value: `平均 ${yen(expense.mean)}`, position: 'insideTopRight', fill: theme.ink, fontSize: 12 }}
-              />
-              <ReferenceLine
-                y={expense.median}
-                stroke={theme.muted}
-                strokeDasharray="1 3"
-                label={{ value: `中央値 ${yen(expense.median)}`, position: 'insideBottomRight', fill: theme.ink, fontSize: 12 }}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      <RawCharts series={series} barData={barData} mean={expense.mean} median={expense.median} theme={theme} />
 
       <div className="row">
         <label>
