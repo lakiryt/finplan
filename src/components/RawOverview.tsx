@@ -18,6 +18,7 @@ import {
   type ViewConfig,
 } from '../domain/view'
 import { downloadJson, useStoredState } from '../state/storage'
+import { useUndoable } from '../state/undo'
 import { CategoryLegendTable, type LegendRow } from './CategoryLegendTable'
 import { yen } from './format'
 import { useChartTheme } from './palette'
@@ -35,7 +36,9 @@ const uid = () => crypto.randomUUID()
 /** 加工なしの概要。CSVのカテゴリーと金額の符号だけで集計する（スーパーカテゴリーは表示上のまとめ） */
 export function RawOverview({ transactions, from, to }: Props) {
   const theme = useChartTheme()
-  const [view, setView] = useStoredState<ViewConfig>('finplan.view', initialView, parseViewConfig)
+  const [view, saveView] = useStoredState<ViewConfig>('finplan.view', initialView, parseViewConfig)
+  // 表示の設定の変更はすべてここを通し、元に戻せるようにする
+  const { set: setView, undo, canUndo, steps } = useUndoable(view, saveView)
 
   const inPeriod = useMemo(() => filterByMonths(transactions, from, to), [transactions, from, to])
   const rows = useMemo(() => rawMonthlyRows(inPeriod, from, to), [inPeriod, from, to])
@@ -137,6 +140,9 @@ export function RawOverview({ transactions, from, to }: Props) {
         uid={uid}
       />
       <div className="row">
+        <button onClick={undo} disabled={!canUndo} title={`Ctrl+Z / ⌘Z でも戻せます（あと${steps}手）`}>
+          ↶ 元に戻す
+        </button>
         <button onClick={() => setView({ ...view, groups: sortByTotal(groups, totals) })}>多い順に並べ替える</button>
         <button
           onClick={() => setView({ ...view, colors: {}, groups: groups.map(({ id, label, members }) => ({ id, label, members })) })}
