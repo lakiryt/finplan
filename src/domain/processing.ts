@@ -93,7 +93,8 @@ export function offsetTargets(config: ProcessingConfig): Map<string, string> {
 
 /**
  * 有効なカードを当てはめた取引を返す。
- * 相殺を先に当てはめるので、同じカテゴリーを実収入のカードで除いていても、相殺が優先される
+ * - 相殺を先に当てはめるので、同じカテゴリーを実収入のカードで除いていても、相殺が優先される
+ * - 差し引く先が実支出のカードで除いている支出なら、相殺した分も一緒に除く（その支出の値引きなので）
  */
 export function applyProcessing(txs: Transaction[], config: ProcessingConfig): Transaction[] {
   const { income, expense } = excludedCategories(config)
@@ -102,9 +103,10 @@ export function applyProcessing(txs: Transaction[], config: ProcessingConfig): T
   return txs.flatMap((t): Transaction[] => {
     const side = txSide(t)
     const target = side === 'income' ? offsets.get(t.category) : undefined
-    if (target) return [{ ...t, category: target, side: 'expense' }]
-    if (side && (side === 'expense' ? expense : income).has(t.category)) return []
-    return [t]
+    const next: Transaction = target ? { ...t, category: target, side: 'expense' } : t
+    const nextSide = target ? 'expense' : side
+    if (nextSide && (nextSide === 'expense' ? expense : income).has(next.category)) return []
+    return [next]
   })
 }
 

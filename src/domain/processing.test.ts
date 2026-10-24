@@ -76,6 +76,18 @@ describe('offset', () => {
     expect(balance(applyProcessing(txs, offset))).toBe(balance(txs))
   })
 
+  it('drops offsets whose target expense is excluded, like the expense itself', () => {
+    const toExcluded: ProcessingConfig = {
+      version: 1,
+      modules: [
+        { id: 'exp', type: 'excludeExpense', enabled: true, categories: ['貯蓄'] },
+        { id: 'off', type: 'offset', enabled: true, pairs: [{ from: '回収', to: '貯蓄' }] },
+      ],
+    }
+    const out = applyProcessing(txs, toExcluded)
+    expect(out.some((t) => t.category === '貯蓄' || t.memo === '割り勘 半額')).toBe(false)
+  })
+
   it('ignores pairs without a target and disabled cards', () => {
     expect(offsetTargets(updateModule(offset, 'off', { pairs: [{ from: '回収', to: '' }] })).size).toBe(0)
     expect(hasActiveModule(updateModule(offset, 'off', { enabled: false }), 'offset')).toBe(false)
