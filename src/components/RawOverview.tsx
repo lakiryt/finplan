@@ -146,11 +146,9 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
             <SummaryCard
               key={m}
               label={labels[m]}
-              values={monthly[m]}
               stats={summaries[m]}
               selected={mode === m}
               onSelect={() => setMode(m)}
-              theme={theme}
             />
           ))}
         </div>

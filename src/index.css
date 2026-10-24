@@ -202,4 +202,3 @@ button:disabled { opacity: 0.4; cursor: default; }
 .summary-label { font-weight: 600; }
 .summary-values { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .summary-values strong { font-size: 1.15rem; }
-.mini-histogram { width: 100%; height: 36px; display: block; }
