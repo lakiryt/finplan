@@ -20,7 +20,8 @@ export interface ExcludeModule {
 }
 
 /**
- * 収入側のカテゴリー from の記録を、支出側のカテゴリー to から差し引く。
+ * 収入側のカテゴリー from の記録を、支出側のカテゴリー to から差し引く。to が空なら、どのカテゴリーにも付けずに
+ * 支出全体から差し引く（UNASSIGNED_OFFSET として数える）。
  * enabled が false なら差し引かない（除くだけ）。to は覚えておき、もう一度有効にしたときに使う
  */
 export interface OffsetPair {
@@ -39,6 +40,9 @@ export interface OffsetModule {
   enabled: boolean
   pairs: OffsetPair[]
 }
+
+/** 差し引く先を指定しない相殺を数えるカテゴリー名（どのカテゴリーにも属さない支出の値引き） */
+export const UNASSIGNED_OFFSET = '差し引き（指定なし）'
 
 export type ProcessingModule = ExcludeModule | OffsetModule
 export type ModulePatch = Partial<Omit<ExcludeModule, 'id' | 'type'>> | Partial<Omit<OffsetModule, 'id' | 'type'>>
@@ -88,13 +92,13 @@ export function excludedCategories(config: ProcessingConfig): { income: Set<stri
 
 /**
  * 有効な相殺（収入側のカテゴリー → 差し引く支出側のカテゴリー）。
- * 実収入のカードで除いているカテゴリーで、差し引く先を選んだものだけ
+ * 実収入のカードで除いているカテゴリーで、チェックを入れたものだけ。差し引く先が空なら UNASSIGNED_OFFSET
  */
 export function offsetTargets(config: ProcessingConfig): Map<string, string> {
   const { income } = excludedCategories(config)
   const map = new Map<string, string>()
   for (const m of config.modules) {
-    if (m.enabled && m.type === 'offset') for (const p of m.pairs) if (p.enabled && p.to && income.has(p.from)) map.set(p.from, p.to)
+    if (m.enabled && m.type === 'offset') for (const p of m.pairs) if (p.enabled && income.has(p.from)) map.set(p.from, p.to || UNASSIGNED_OFFSET)
   }
   return map
 }

@@ -8,6 +8,7 @@ import {
   offsetTargets,
   parseProcessingConfig,
   updateModule,
+  UNASSIGNED_OFFSET,
   type ProcessingConfig,
 } from './processing'
 import { rawMonthlyRows } from './raw'
@@ -85,9 +86,11 @@ describe('offset (相殺)', () => {
     expect(applyProcessing(txs, unchecked).some((t) => t.memo === '割り勘 半額')).toBe(false)
   })
 
-  it('just excludes when no target is chosen, and drops offsets into excluded expenses', () => {
-    expect(applyProcessing(txs, withOffset('')).some((t) => t.memo === '割り勘 半額')).toBe(false)
+  it('subtracts from the whole expense when no target is chosen, and drops offsets into excluded expenses', () => {
+    const unassigned = applyProcessing(txs, withOffset(''))
+    expect(unassigned.find((t) => t.memo === '割り勘 半額')).toMatchObject({ category: UNASSIGNED_OFFSET, side: 'expense' })
+    expect(balance(applyProcessing(txs, noExpenseCard(withOffset(''))))).toBe(balance(txs))
+    expect(hasActiveModule(withOffset(''), 'offset')).toBe(true)
     expect(applyProcessing(txs, withOffset('貯蓄')).some((t) => t.memo === '割り勘 半額')).toBe(false)
-    expect(hasActiveModule(withOffset(''), 'offset')).toBe(false)
   })
 })
