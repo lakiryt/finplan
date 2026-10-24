@@ -27,3 +27,6 @@ dist-ssr
 csv/
 *.csv
 !sample/*.csv
+
+# Personal context for Claude Code
+CLAUDE.local.md

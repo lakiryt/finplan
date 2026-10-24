@@ -3,11 +3,11 @@ import { CategoryTable } from './components/CategoryTable'
 import { ClassifySettings } from './components/ClassifySettings'
 import { FileImport } from './components/FileImport'
 import { MonthlyChart } from './components/MonthlyChart'
+import { RentBudget } from './components/RentBudget'
 import { SummaryTiles } from './components/SummaryTiles'
-import { WageCalculator } from './components/WageCalculator'
 import { categorySummaries, filterByMonths, monthOf, monthRange, monthlyRows } from './domain/aggregate'
 import { classify } from './domain/classify'
-import { defaultConfig } from './domain/defaultConfig'
+import { defaultConfig, parseConfig } from './domain/config'
 import { seriesStats } from './domain/stats'
 import type { ClassifyConfig, Transaction } from './domain/types'
 import { removeStored, useStoredState } from './state/storage'
@@ -31,7 +31,7 @@ function defaultPeriod(txs: Transaction[]) {
 
 export default function App() {
   const [transactions, setTransactions] = useStoredState<Transaction[]>(TX_KEY, [])
-  const [config, setConfig] = useStoredState<ClassifyConfig>('finplan.config', defaultConfig)
+  const [config, setConfig] = useStoredState<ClassifyConfig>('finplan.config', defaultConfig, parseConfig)
   const initial = useMemo(() => defaultPeriod(transactions), [transactions])
   const [period, setPeriod] = useState<{ from: string; to: string } | null>(null)
   const from = period?.from ?? initial?.from ?? ''
@@ -53,7 +53,7 @@ export default function App() {
     <main>
       <header>
         <h1>finplan</h1>
-        <p className="muted">家計簿のCSVから生活費の実績を集計し、家賃や時給の目安を計算します。</p>
+        <p className="muted">家計簿のCSVから家賃を除いた生活費の実績を集計し、家賃の目安を計算します。</p>
       </header>
 
       <section>
@@ -92,6 +92,7 @@ export default function App() {
                 onChange={setConfig}
                 onReset={() => setConfig(defaultConfig)}
                 transactions={transactions}
+                classified={classified}
               />
             </details>
           </section>
@@ -126,8 +127,8 @@ export default function App() {
           </section>
 
           <section>
-            <h2>4. 必要な時給の目安</h2>
-            <WageCalculator living={livingStats} />
+            <h2>4. 家賃の目安</h2>
+            <RentBudget living={livingStats} />
           </section>
         </>
       )}

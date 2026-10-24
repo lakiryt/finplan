@@ -10,11 +10,11 @@ export interface Transaction {
 }
 
 /**
- * グループの役割。集計・シミュレーションはこの役割だけを見る。
+ * グループの役割。集計はこの役割だけを見る。
  * - living: 生活費（家賃を除く）
- * - housing: 住居費（家賃・更新料など）
+ * - housing: 住居費（家賃など）
  * - income: 収入
- * - ignore: 集計から外す（貯蓄・口座移動・調整など）
+ * - ignore: 集計から外す（貯蓄・口座移動・調整・一時的な支出など）
  */
 export type GroupRole = 'living' | 'housing' | 'income' | 'ignore'
 
@@ -24,23 +24,43 @@ export interface Group {
   role: GroupRole
 }
 
-/** メモに一致した取引のカテゴリーやグループを上書きするルール */
-export interface MemoRule {
-  id: string
-  pattern: string
-  isRegex: boolean
-  /** 指定するとカテゴリーを置き換える */
+/** ルールの条件。指定した項目すべてに一致した取引が対象（未指定の項目は問わない） */
+export interface RuleMatch {
+  /** 元のカテゴリー（CSVに書かれていたもの） */
   category?: string
-  /** 指定するとカテゴリーの割り当てより優先してこのグループに入れる */
+  memo?: string
+  memoIsRegex?: boolean
+  /** YYYY-MM-DD（この日を含む） */
+  from?: string
+  /** YYYY-MM-DD（この日を含む） */
+  to?: string
+}
+
+/** ルールの効果。新しい分析機能はここに項目を足して classify.ts で実装する */
+export interface RuleEffect {
+  /** カテゴリーを付け替える（新しい名前でもよい） */
+  category?: string
+  /** カテゴリーの割り当てより優先してこのグループに入れる */
   groupId?: string
+  /** 取引月から N か月に均等に割って計上する（大きな出費をならす） */
+  amortizeMonths?: number
+}
+
+export interface Rule {
+  id: string
+  label: string
+  enabled: boolean
+  match: RuleMatch
+  effect: RuleEffect
 }
 
 export interface ClassifyConfig {
-  version: 1
+  version: 2
   groups: Group[]
   /** カテゴリー名 → グループID */
   categoryGroup: Record<string, string>
-  memoRules: MemoRule[]
+  /** 上から順に、一致したものすべてを適用する（同じ効果は後のルールが上書き） */
+  rules: Rule[]
 }
 
 export interface ClassifiedTransaction extends Transaction {
@@ -48,4 +68,6 @@ export interface ClassifiedTransaction extends Transaction {
   /** どのグループにも割り当てられていない場合は null */
   groupId: string | null
   role: GroupRole | null
+  /** 按分で作られた取引の場合、元の取引のID */
+  amortizedFrom?: string
 }

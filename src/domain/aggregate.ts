@@ -76,7 +76,8 @@ export function categorySummaries(txs: ClassifiedTransaction[], monthCount: numb
       s = { category: tx.category, groupId: tx.groupId, role: tx.role, count: 0, total: 0, monthlyMean: 0 }
       map.set(tx.category, s)
     }
-    s.count++
+    // 按分で展開された取引は、元の1件として数える
+    if (!tx.amortizedFrom || tx.id.endsWith('#0')) s.count++
     s.total += signedForRole(tx.amount, tx.role)
   }
   for (const s of map.values()) s.monthlyMean = monthCount ? s.total / monthCount : 0
