@@ -107,7 +107,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .expand { display: block; width: 100%; margin-top: 4px; border-style: dashed; }
 
 .popover {
-  position: fixed; z-index: 10; min-width: 240px; max-height: 60vh; overflow-y: auto;
+  position: fixed; z-index: 10; max-height: 60vh; overflow-y: auto;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); padding: 4px; display: grid; gap: 2px;
 }
@@ -151,10 +151,10 @@ button:disabled { opacity: 0.4; cursor: default; }
   background: linear-gradient(to top right, transparent calc(50% - 1px), var(--muted) 50%, transparent calc(50% + 1px));
   border: 1px dashed var(--muted);
 }
-.picker { display: grid; gap: 6px; padding: 8px; width: 232px; }
+.picker { display: grid; gap: 6px; padding: 8px; }
 .picker-label { font-size: 0.8rem; color: var(--ink-2); }
-.picker-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.picker-swatch { width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 3px; cursor: pointer; }
+.picker-grid { display: grid; grid-template-columns: repeat(6, 26px); gap: 6px; }
+.picker-swatch { width: 26px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 3px; cursor: pointer; }
 .picker-swatch.selected, .picker-none.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
 .picker-none { display: flex; align-items: center; gap: 2px; border: none; background: none; padding: 2px; }
 .picker-custom { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; border-top: 1px solid var(--line); padding-top: 6px; }

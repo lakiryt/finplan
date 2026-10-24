@@ -31,8 +31,7 @@ interface Props {
   onGroupColorChange: (groupId: string, color: string | undefined) => void
   /** 中身のカテゴリーにスーパーカテゴリーと似た色を割り当て直す */
   onRecolorMembers: (groupId: string) => void
-  /** 色の選択に出す基本の色と、使用中の色 */
-  palette: string[]
+  /** 色の選択に出す使用中の色 */
   inUse: string[]
   /** 色が未設定のときの色 */
   gray: string
@@ -68,7 +67,7 @@ interface ResizeDrag {
  * 左のつまみで行を並べ替え、表の横のバーでスーパーカテゴリー（連続した行のまとめ）を作る
  */
 export function CategoryLegendTable(props: Props) {
-  const { rows, groups, onGroupsChange, onColorChange, onGroupColorChange, onRecolorMembers, palette, inUse, gray, uid } = props
+  const { rows, groups, onGroupsChange, onColorChange, onGroupColorChange, onRecolorMembers, inUse, gray, uid } = props
   const [expanded, setExpanded] = useState(false)
   // 行の並べ替え
   const [armed, setArmed] = useState<string>()
@@ -184,14 +183,16 @@ export function CategoryLegendTable(props: Props) {
                 <ColorPicker
                   value={g.color}
                   onChange={(c) => onGroupColorChange(g.id, c)}
-                  palette={palette}
                   inUse={inUse}
                   noneColor={g.color ? undefined : gray}
                   title="スーパーカテゴリーの色"
                 />
-                {g.color && g.members.length > 1 && (
-                  <button onClick={() => onRecolorMembers(g.id)} title="中身のカテゴリーに、この色と似た色を割り当て直す">
-                    中身に似た色を割り当てる
+                {g.color && (
+                  <button
+                    onClick={() => onRecolorMembers(g.id)}
+                    title={g.members.length > 1 ? '中身のカテゴリーに、この色と似た色を割り当て直す' : 'カテゴリーの色をこの色にする'}
+                  >
+                    {g.members.length > 1 ? '中身に似た色を割り当てる' : 'カテゴリーにも同じ色を設定'}
                   </button>
                 )}
               </div>
@@ -284,7 +285,6 @@ export function CategoryLegendTable(props: Props) {
                 <ColorPicker
                   value={row.color}
                   onChange={(c) => onColorChange(row.category, c)}
-                  palette={palette}
                   inUse={inUse}
                   title={`${row.category}の色（無色ならスーパーカテゴリーの色で表示）`}
                 />

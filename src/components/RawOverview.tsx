@@ -128,7 +128,6 @@ export function RawOverview({ transactions, from, to }: Props) {
         onColorChange={setColor}
         onGroupColorChange={setGroupColorAndMembers}
         onRecolorMembers={(id) => setView({ ...view, colors: recolorMembers(groups, view.colors, id) })}
-        palette={theme.series}
         inUse={colorsInUse(view)}
         gray={theme.other}
         uid={uid}

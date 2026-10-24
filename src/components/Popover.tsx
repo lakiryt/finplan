@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+
+const MARGIN = 8
 
 /**
  * ボタンの下に出る小さな窓。表のスクロール枠で切れないよう、画面に固定した位置に出す。
+ * 開いた後に窓の大きさを測り、画面からはみ出さない位置に置き直す。
  * 外側を押す・スクロールする・画面の大きさが変わると閉じる
  */
 export function Popover({
@@ -14,19 +17,33 @@ export function Popover({
   children: (close: () => void) => ReactNode
   className?: string
 }) {
-  const [pos, setPos] = useState<{ top: number; right: number }>()
+  const [anchor, setAnchor] = useState<DOMRect>()
+  const [pos, setPos] = useState<{ top: number; left: number }>()
   const ref = useRef<HTMLSpanElement>(null)
-  const close = () => setPos(undefined)
+  const popRef = useRef<HTMLDivElement>(null)
+  const close = () => {
+    setAnchor(undefined)
+    setPos(undefined)
+  }
   const toggle = (e: MouseEvent<HTMLElement>) => {
-    if (pos) return close()
-    const rect = e.currentTarget.getBoundingClientRect()
-    setPos({ top: rect.bottom + 4, right: Math.max(8, window.innerWidth - rect.right) })
+    if (anchor) return close()
+    setAnchor(e.currentTarget.getBoundingClientRect())
   }
 
+  // 描画した窓の大きさから位置を決める（ボタンの左端に揃え、はみ出すなら画面内にずらす。下が足りなければ上に出す）
+  useLayoutEffect(() => {
+    if (!anchor || !popRef.current) return
+    const { width, height } = popRef.current.getBoundingClientRect()
+    const left = Math.min(Math.max(MARGIN, anchor.left), window.innerWidth - width - MARGIN)
+    const below = anchor.bottom + 4
+    const top = below + height > window.innerHeight - MARGIN ? Math.max(MARGIN, anchor.top - 4 - height) : below
+    setPos({ top, left: Math.max(MARGIN, left) })
+  }, [anchor])
+
   useEffect(() => {
-    if (!pos) return
+    if (!anchor) return
     const onOutside = (e: Event) => {
-      if (!ref.current?.contains(e.target as Node)) setPos(undefined)
+      if (!ref.current?.contains(e.target as Node)) close()
     }
     document.addEventListener('mousedown', onOutside)
     window.addEventListener('scroll', onOutside, true)
@@ -36,13 +53,18 @@ export function Popover({
       window.removeEventListener('scroll', onOutside, true)
       window.removeEventListener('resize', onOutside)
     }
-  }, [pos])
+  }, [anchor])
 
   return (
     <span ref={ref} className={className}>
       {trigger(toggle)}
-      {pos && (
-        <div className="popover" style={{ top: pos.top, right: pos.right }}>
+      {anchor && (
+        <div
+          ref={popRef}
+          className="popover"
+          // 位置が決まるまでは見えないところで大きさだけ測る
+          style={pos ? { top: pos.top, left: pos.left } : { top: 0, left: 0, visibility: 'hidden' }}
+        >
           {children(close)}
         </div>
       )}
