@@ -130,29 +130,23 @@ button:disabled { opacity: 0.4; cursor: default; }
 .category-cell .clear-color { visibility: hidden; border: none; background: none; padding: 0 4px; color: var(--muted); }
 .category-cell:hover .clear-color { visibility: visible; }
 
-/* 右（スーパーカテゴリー）は丸いバー。まとめると上下の隙間と角の丸みが消えてつながる */
-.legend-table td.super-cell { position: relative; min-width: 200px; padding: 0; }
+/* 表の横のスーパーカテゴリーのバー。1件だけなら真ん丸、まとめると縦につながる */
+.legend-table td.super-cell { position: relative; width: 104px; min-width: 104px; padding: 0; border-bottom: none; }
+.legend-table th.super-head { border-bottom: none; padding-left: 20px; font-size: 0.8rem; }
 .seg {
-  position: absolute; left: 6px; right: 6px; top: 3px; bottom: 3px;
-  display: flex; align-items: center; gap: 4px; padding: 0 4px 0 10px;
-  border: 1.5px solid var(--axis-line); border-radius: 999px;
-  background: color-mix(in srgb, var(--axis-line) 25%, transparent);
-  cursor: ns-resize; touch-action: none; user-select: none;
-  transition: top 0.22s ease, bottom 0.22s ease, border-radius 0.22s ease, background-color 0.22s ease, border-color 0.22s ease;
+  position: absolute; left: 20px; width: 16px; top: calc(50% - 8px); bottom: calc(50% - 8px);
+  border-radius: 8px; cursor: grab; touch-action: none;
+  transition: top 0.22s ease, bottom 0.22s ease, border-radius 0.22s ease, background-color 0.22s ease;
 }
-.seg.join-up { top: -1px; border-top-width: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
-.seg.join-down { bottom: -1px; border-bottom-width: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-.seg.join-up:not(.join-down) { cursor: ns-resize; }
-.seg.join-up.join-down { cursor: default; }
-.seg-label { flex: 1; min-width: 0; }
-.seg-label > button {
-  border: none; background: none; padding: 0; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; cursor: pointer;
+.seg:active { cursor: grabbing; }
+.seg.join-up { top: -1px; border-top-left-radius: 0; border-top-right-radius: 0; }
+.seg.join-down { bottom: -1px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.seg-actions {
+  position: absolute; left: 42px; top: 50%; transform: translateY(-50%);
+  display: flex; visibility: hidden;
 }
-.seg-label > button:hover { text-decoration: underline; }
-.seg-actions { margin-left: auto; display: flex; visibility: hidden; }
 tr:hover .seg-actions { visibility: visible; }
-.seg-actions button { border: none; background: none; padding: 0 5px; font-size: 0.8rem; color: var(--ink-2); }
+.seg-actions button { border: none; background: none; padding: 0 4px; font-size: 0.8rem; color: var(--ink-2); }
 .seg-actions button:hover { color: var(--accent); }
 .group-editor { display: grid; gap: 8px; padding: 8px; }
 .group-editor label { display: flex; align-items: center; gap: 8px; }
