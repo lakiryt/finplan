@@ -54,6 +54,7 @@ CSV → importers → Transaction[] → classify（ルール → カテゴリー
 | `src/state/storage.ts` | localStorage への保存（失敗しても動く） |
 | `src/components/` | 画面部品 |
 | `scripts/inspect.ts` | 実データを画面を開かずに確認するスクリプト |
+| `docs/` | 考え方の説明（画面の ⓘ には要点だけを載せ、詳しくはここに書く）。例: `real-income-expense.md` |
 
 ### 画面の流れ
 
