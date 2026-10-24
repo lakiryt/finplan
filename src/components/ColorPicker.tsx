@@ -17,23 +17,8 @@ interface Props {
 
 const same = (a?: string, b?: string) => Boolean(a && b && a.toLowerCase() === b.toLowerCase())
 
-/** 四角い色見本。押すと「無色・基本の色・使用中の色・その他の色」から選べる */
+/** 四角い色見本。押すと色の選択（ColorPanel）が開く */
 export function ColorPicker({ value, onChange, inUse, title, allowNone = true, noneColor }: Props) {
-  const used = inUse.filter((c) => !BASIC_COLORS.some((b) => same(b.hex, c)))
-  const swatch = (hex: string, name: string, close: () => void) => (
-    <button
-      key={hex}
-      className={`picker-swatch ${same(hex, value) ? 'selected' : ''}`}
-      style={{ background: hex }}
-      title={name}
-      aria-label={name}
-      onClick={() => {
-        onChange(hex)
-        close()
-      }}
-    />
-  )
-
   return (
     <Popover
       className="color-picker"
@@ -46,34 +31,58 @@ export function ColorPicker({ value, onChange, inUse, title, allowNone = true, n
         />
       )}
     >
-      {(close) => (
-        <div className="picker">
-          {allowNone && (
-            <button
-              className={`picker-none ${value ? '' : 'selected'}`}
-              onClick={() => {
-                onChange(undefined)
-                close()
-              }}
-            >
-              <span className="swatch-button none" /> 無色
-            </button>
-          )}
-          <div className="picker-label">基本の色</div>
-          <div className="picker-grid">{BASIC_COLORS.map((c) => swatch(c.hex, c.name, close))}</div>
-          {used.length > 0 && (
-            <>
-              <div className="picker-label">使用中の色</div>
-              <div className="picker-grid">{used.map((c) => swatch(c, c, close))}</div>
-            </>
-          )}
-          <label className="picker-custom">
-            その他の色
-            <CustomColor value={value} onCommit={onChange} />
-          </label>
-        </div>
-      )}
+      {(close) => <ColorPanel value={value} onChange={onChange} inUse={inUse} allowNone={allowNone} onPicked={close} />}
     </Popover>
+  )
+}
+
+interface PanelProps {
+  value?: string
+  onChange: (color: string | undefined) => void
+  inUse: string[]
+  allowNone?: boolean
+  /** 見本から選んだ後に呼ばれる（窓を閉じるなど） */
+  onPicked?: () => void
+}
+
+/** 色の選択の中身。「無色・基本の色・使用中の色・その他の色」。窓の中にもそのまま置ける */
+export function ColorPanel({ value, onChange, inUse, allowNone = true, onPicked }: PanelProps) {
+  const used = inUse.filter((c) => !BASIC_COLORS.some((b) => same(b.hex, c)))
+  const pick = (color: string | undefined) => {
+    onChange(color)
+    onPicked?.()
+  }
+  const swatch = (hex: string, name: string) => (
+    <button
+      key={hex}
+      className={`picker-swatch ${same(hex, value) ? 'selected' : ''}`}
+      style={{ background: hex }}
+      title={name}
+      aria-label={name}
+      onClick={() => pick(hex)}
+    />
+  )
+
+  return (
+    <div className="picker">
+      {allowNone && (
+        <button className={`picker-none ${value ? '' : 'selected'}`} onClick={() => pick(undefined)}>
+          <span className="swatch-button none" /> 無色
+        </button>
+      )}
+      <div className="picker-label">基本の色</div>
+      <div className="picker-grid">{BASIC_COLORS.map((c) => swatch(c.hex, c.name))}</div>
+      {used.length > 0 && (
+        <>
+          <div className="picker-label">使用中の色</div>
+          <div className="picker-grid">{used.map((c) => swatch(c, c))}</div>
+        </>
+      )}
+      <label className="picker-custom">
+        その他の色
+        <CustomColor value={value} onCommit={onChange} />
+      </label>
+    </div>
   )
 }
 

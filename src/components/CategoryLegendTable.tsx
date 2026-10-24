@@ -11,7 +11,7 @@ import {
   type CategoryGroup,
   type IdGenerator,
 } from '../domain/view'
-import { ColorPicker } from './ColorPicker'
+import { ColorPanel, ColorPicker } from './ColorPicker'
 import { yen } from './format'
 import { Popover } from './Popover'
 
@@ -178,15 +178,11 @@ export function CategoryLegendTable(props: Props) {
                   onKeyDown={(e) => e.key === 'Enter' && close()}
                 />
               </label>
+              {/* カテゴリーの色の窓と同じ中身を、ここでは窓を重ねずにそのまま出す */}
+              <div className="editor-color">
+                <ColorPanel value={g.color} onChange={(c) => onGroupColorChange(g.id, c)} inUse={inUse} />
+              </div>
               <div className="editor-row">
-                色
-                <ColorPicker
-                  value={g.color}
-                  onChange={(c) => onGroupColorChange(g.id, c)}
-                  inUse={inUse}
-                  noneColor={g.color ? undefined : gray}
-                  title="スーパーカテゴリーの色"
-                />
                 {g.color && (
                   <button
                     onClick={() => onRecolorMembers(g.id)}
