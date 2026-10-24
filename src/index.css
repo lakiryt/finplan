@@ -179,7 +179,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 /* 3. の加工のカード。無効なカードは見出しのチェック以外を薄くする */
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin: 12px 0; }
 .card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; background: var(--page); }
-.card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; cursor: pointer; }
+.card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card-head label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .card-head strong { font-size: 1rem; }
 .card-body { border: none; margin: 0; padding: 0; transition: opacity 0.2s; }
 .card-body p { margin: 6px 0; }
@@ -203,3 +204,10 @@ button:disabled { opacity: 0.4; cursor: default; }
 .summary-label { font-weight: 600; }
 .summary-values { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .summary-values strong { font-size: 1.15rem; }
+
+/* ⓘ の説明 */
+.info-button { border: none; background: none; padding: 0 2px; color: var(--muted); font-size: 1rem; line-height: 1; cursor: pointer; }
+.info-button:hover { color: var(--accent); }
+.info-body { max-width: min(420px, calc(100vw - 32px)); padding: 10px 12px; font-size: 0.85rem; line-height: 1.7; }
+.info-body p { margin: 0 0 8px; }
+.info-body ul { margin: 0 0 8px; padding-left: 1.2em; }
