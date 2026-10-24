@@ -20,11 +20,11 @@ npm run inspect -- <csv>   # 画面を開かずに集計を確認
 
 カテゴリーはコードに書かず、条件で指定します。「3. 加工」の工程ごとに、条件（収入側か支出側か・カテゴリー・メモ・期間）を足していきます。
 
-- **除外**: 条件に当たる記録を除きます（積立や貯金の引き出しなど、置き場所を移しただけのお金）。
 - **相殺**: 条件に当たる記録を除き、反対側からも同じ額を差し引きます（割り勘の回収を支出から、家賃を収入から、など）。収支は変わりません。
+- **除外**: 相手方が家計簿の外にあるもの（積立や貯金の引き出しなど、置き場所を移しただけのお金）を除きます。
 
 一般的な初期設定は `src/config/default-processing.json` と `default-view.json` にあります。自分用の初期設定は、同じ名前のファイルを `src/config/local/` に置くと開発サーバーで使われます（Gitの管理対象外で、公開用のビルドにも入りません）。
 
-実収入・実支出の考え方は [docs/real-income-expense.md](docs/real-income-expense.md)、相殺と生活費の定義の考え方は [docs/offset-and-living-cost.md](docs/offset-and-living-cost.md) にまとめています。
+考え方の要点は [docs/principles.md](docs/principles.md) にまとめています（詳しくは [実収入・実支出](docs/real-income-expense.md)、[相殺と生活費の定義](docs/offset-and-living-cost.md)）。
 
 構成や開発の方針は [CLAUDE.md](CLAUDE.md) を参照してください。
