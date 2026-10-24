@@ -1,4 +1,5 @@
 import { defaultConfig, parseConfig } from '../domain/config'
+import { defaultProcessing, parseProcessingConfig } from '../domain/processing'
 import { defaultView, parseViewConfig } from '../domain/view'
 
 /**
@@ -10,8 +11,12 @@ const local: Record<string, unknown> = import.meta.env.DEV
   ? import.meta.glob<unknown>('./local/*.json', { eager: true, import: 'default' })
   : {}
 
-export const initialConfig = local['./local/default-config.json']
-  ? parseConfig(local['./local/default-config.json'])
-  : defaultConfig
+/** local/ に name のファイルがあればそれを、無ければ一般的な初期設定を使う */
+function pick<T>(name: string, parse: (raw: unknown) => T, fallback: T): T {
+  const raw = local[`./local/${name}`]
+  return raw ? parse(raw) : fallback
+}
 
-export const initialView = local['./local/default-view.json'] ? parseViewConfig(local['./local/default-view.json']) : defaultView
+export const initialConfig = pick('default-config.json', parseConfig, defaultConfig)
+export const initialView = pick('default-view.json', parseViewConfig, defaultView)
+export const initialProcessing = pick('default-processing.json', parseProcessingConfig, defaultProcessing)

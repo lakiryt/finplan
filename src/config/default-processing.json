@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "modules": [
+    { "id": "real-income", "type": "excludeIncome", "enabled": false, "categories": [] },
+    { "id": "real-expense", "type": "excludeExpense", "enabled": false, "categories": [] }
+  ]
+}
