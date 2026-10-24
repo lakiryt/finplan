@@ -31,8 +31,9 @@ interface Props {
   onGroupColorChange: (groupId: string, color: string | undefined) => void
   /** 中身のカテゴリーにスーパーカテゴリーと似た色を割り当て直す */
   onRecolorMembers: (groupId: string) => void
-  /** 色の選択に出す使用中の色 */
-  inUse: string[]
+  /** 色の選択に出す使用中の色（カテゴリーとスーパーカテゴリーで別々） */
+  categoryColorsInUse: string[]
+  groupColorsInUse: string[]
   /** 色が未設定のときの色 */
   gray: string
   uid: IdGenerator
@@ -67,7 +68,7 @@ interface ResizeDrag {
  * 左のつまみで行を並べ替え、表の横のバーでスーパーカテゴリー（連続した行のまとめ）を作る
  */
 export function CategoryLegendTable(props: Props) {
-  const { rows, groups, onGroupsChange, onColorChange, onGroupColorChange, onRecolorMembers, inUse, gray, uid } = props
+  const { rows, groups, onGroupsChange, onColorChange, onGroupColorChange, onRecolorMembers, categoryColorsInUse, groupColorsInUse, gray, uid } = props
   const [expanded, setExpanded] = useState(false)
   // 行の並べ替え
   const [armed, setArmed] = useState<string>()
@@ -180,7 +181,7 @@ export function CategoryLegendTable(props: Props) {
               </label>
               {/* カテゴリーの色の窓と同じ中身を、ここでは窓を重ねずにそのまま出す */}
               <div className="editor-color">
-                <ColorPanel value={g.color} onChange={(c) => onGroupColorChange(g.id, c)} inUse={inUse} />
+                <ColorPanel value={g.color} onChange={(c) => onGroupColorChange(g.id, c)} inUse={groupColorsInUse} />
               </div>
               <div className="editor-row">
                 {g.color && (
@@ -281,7 +282,7 @@ export function CategoryLegendTable(props: Props) {
                 <ColorPicker
                   value={row.color}
                   onChange={(c) => onColorChange(row.category, c)}
-                  inUse={inUse}
+                  inUse={categoryColorsInUse}
                   title={`${row.category}の色（無色ならスーパーカテゴリーの色で表示）`}
                 />
                 {row.category || '（空欄）'}

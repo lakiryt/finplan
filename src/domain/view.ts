@@ -1,5 +1,5 @@
 import defaultViewJson from '../config/default-view.json'
-import { harmoniousShades, type Random } from './colors'
+import { harmoniousShades, hexToOklch, type Random } from './colors'
 
 /**
  * スーパーカテゴリー。表の上で連続したカテゴリーの範囲を1つにまとめる（表示上だけで、集計の加工とは別）。
@@ -264,8 +264,58 @@ export function displaySeries(groups: CategoryGroup[], view: Pick<ViewConfig, 'u
   }))
 }
 
-/** 今どこかに設定されている色（色を選ぶときの候補） */
-export function colorsInUse(view: ViewConfig): string[] {
-  const all = [...Object.values(view.colors), ...view.groups.map((g) => g.color).filter((c): c is string => Boolean(c))]
-  return [...new Set(all.map((c) => c.toLowerCase()))]
+const uniqueColors = (colors: (string | undefined)[]) => [...new Set(colors.filter((c): c is string => Boolean(c)).map((c) => c.toLowerCase()))]
+
+/** カテゴリーに設定されている色（カテゴリーの色を選ぶときの候補） */
+export function categoryColorsInUse(view: Pick<ViewConfig, 'colors'>): string[] {
+  return uniqueColors(Object.values(view.colors))
+}
+
+/** スーパーカテゴリーに設定されている色（スーパーカテゴリーの色を選ぶときの候補） */
+export function groupColorsInUse(groups: CategoryGroup[]): string[] {
+  return uniqueColors(groups.map((g) => g.color))
+}
+
+/** OKLab での色の差（見た目の違いの大きさ） */
+function colorDistance(a: string, b: string): number {
+  const x = hexToOklch(a)
+  const y = hexToOklch(b)
+  const [ax, ay] = [x.c * Math.cos((x.h * Math.PI) / 180), x.c * Math.sin((x.h * Math.PI) / 180)]
+  const [bx, by] = [y.c * Math.cos((y.h * Math.PI) / 180), y.c * Math.sin((y.h * Math.PI) / 180)]
+  return Math.hypot(x.l - y.l, ax - bx, ay - by)
+}
+
+/**
+ * 色付きのスーパーカテゴリーに新しく加わった無色のカテゴリーに、似た色を割り当てる。
+ * 似た色の候補の中から、すでにいる中身の色と一番離れたものを順に選ぶ（見分けやすくするため）
+ */
+export function colorJoinedMembers(
+  before: CategoryGroup[],
+  after: CategoryGroup[],
+  colors: Record<string, string>,
+  random?: Random,
+): Record<string, string> {
+  const previousMembers = new Map(before.map((g) => [g.id, new Set(g.members)]))
+  let next = colors
+  for (const g of after) {
+    if (!g.color || g.members.length < 2) continue
+    const old = previousMembers.get(g.id) ?? new Set<string>()
+    const joined = g.members.filter((m) => !old.has(m) && !next[m])
+    if (!joined.length) continue
+    const taken = g.members.map((m) => next[m]).filter((c): c is string => Boolean(c))
+    const candidates = harmoniousShades(g.color, Math.max(6, (taken.length + joined.length) * 2), random)
+    next = { ...next }
+    for (const m of joined) {
+      const best = candidates
+        .filter((c) => !taken.includes(c))
+        .reduce<{ c: string; d: number } | null>((acc, c) => {
+          const d = taken.length ? Math.min(...taken.map((t) => colorDistance(c, t))) : 1
+          return !acc || d > acc.d ? { c, d } : acc
+        }, null)
+      const color = best?.c ?? g.color
+      next[m] = color
+      taken.push(color)
+    }
+  }
+  return next
 }

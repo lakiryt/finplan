@@ -8,7 +8,9 @@ import { expenseRanking, rawExpenseByCategory, rawMonthlyRows } from './raw'
 import { median, seriesStats } from './stats'
 import type { ClassifyConfig, Rule } from './types'
 import {
-  colorsInUse,
+  categoryColorsInUse,
+  colorJoinedMembers,
+  groupColorsInUse,
   defaultView,
   detachCategory,
   displaySeries,
@@ -257,9 +259,9 @@ describe('view groups', () => {
   })
 
   it('lists colors in use and parses configs (including v1)', () => {
-    expect(colorsInUse({ version: 2, useSuperCategories: false, colors: { A: '#AA0000' }, groups: [g('x', ['B'], { color: '#aa0000' })] })).toEqual([
-      '#aa0000',
-    ])
+    // カテゴリーとスーパーカテゴリーの色は別々に集める
+    expect(categoryColorsInUse({ colors: { A: '#AA0000', B: '#aa0000', C: '#00ff00' } })).toEqual(['#aa0000', '#00ff00'])
+    expect(groupColorsInUse([g('x', ['B'], { color: '#0000FF' }), g('y', ['C'])])).toEqual(['#0000ff'])
     expect(defaultView.version).toBe(2)
     const migrated = parseViewConfig({ version: 1, colors: {}, superCategories: [{ id: 's', label: 'S', members: ['A', 'B'] }] })
     expect(migrated.groups).toEqual([{ id: 's', label: 'S', members: ['A', 'B'] }])
@@ -332,5 +334,29 @@ describe('basic colors', () => {
   it('gives a single-member group exactly the group color', () => {
     const g: CategoryGroup[] = [{ id: 'x', color: '#123456', members: ['A'] }]
     expect(recolorMembers(g, {}, 'x')).toEqual({ A: '#123456' })
+  })
+})
+
+describe('coloring members that join a group', () => {
+  const g = (id: string, members: string[], color?: string): CategoryGroup => (color ? { id, members, color } : { id, members })
+
+  it('colors only colorless categories that newly joined a colored group', () => {
+    const before = [g('x', ['A', 'B'], '#2a78d6'), g('c', ['C']), g('d', ['D'], '#eb6834')]
+    const after = [g('x', ['A', 'B', 'C'], '#2a78d6'), g('d', ['D'], '#eb6834')]
+    const colors = colorJoinedMembers(before, after, { A: '#1955b4' }, seededRandom(2))
+    expect(Object.keys(colors).sort()).toEqual(['A', 'C'])
+    expect(colors.A).toBe('#1955b4')
+    // 似た色（色相が近い）
+    const hue = (hex: string) => hexToOklch(hex).h
+    expect(Math.abs(hue(colors.C) - hue('#2a78d6'))).toBeLessThan(10)
+    expect(colors.C).not.toBe(colors.A)
+  })
+
+  it('does nothing for colorless groups, colored categories, or unchanged groups', () => {
+    const before = [g('x', ['A']), g('b', ['B'])]
+    expect(colorJoinedMembers(before, [g('x', ['A', 'B'])], {})).toEqual({})
+    const colored = [g('x', ['A'], '#2a78d6'), g('b', ['B'])]
+    expect(colorJoinedMembers(colored, [g('x', ['A', 'B'], '#2a78d6')], { B: '#000000' })).toEqual({ B: '#000000' })
+    expect(colorJoinedMembers(colored, colored, {})).toEqual({})
   })
 })

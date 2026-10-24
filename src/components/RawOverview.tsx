@@ -5,7 +5,9 @@ import { expenseRanking, rawExpenseByCategory, rawMonthlyRows, type RawCategoryS
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
 import {
-  colorsInUse,
+  categoryColorsInUse,
+  colorJoinedMembers,
+  groupColorsInUse,
   displaySeries,
   flatten,
   parseViewConfig,
@@ -124,11 +126,13 @@ export function RawOverview({ transactions, from, to }: Props) {
       <CategoryLegendTable
         rows={legendRows}
         groups={groups}
-        onGroupsChange={(g) => setView({ ...view, groups: g })}
+        // 色付きのスーパーカテゴリーに無色のカテゴリーが加わったら、似た色を割り当てる
+        onGroupsChange={(g) => setView({ ...view, groups: g, colors: colorJoinedMembers(groups, g, view.colors) })}
         onColorChange={setColor}
         onGroupColorChange={setGroupColorAndMembers}
         onRecolorMembers={(id) => setView({ ...view, colors: recolorMembers(groups, view.colors, id) })}
-        inUse={colorsInUse(view)}
+        categoryColorsInUse={categoryColorsInUse(view)}
+        groupColorsInUse={groupColorsInUse(groups)}
         gray={theme.other}
         uid={uid}
       />
@@ -136,7 +140,7 @@ export function RawOverview({ transactions, from, to }: Props) {
         <button onClick={() => setView({ ...view, groups: sortByTotal(groups, totals) })}>多い順に並べ替える</button>
         <button
           onClick={() => setView({ ...view, colors: {}, groups: groups.map(({ id, label, members }) => ({ id, label, members })) })}
-          disabled={!colorsInUse(view).length}
+          disabled={!categoryColorsInUse(view).length && !groupColorsInUse(groups).length}
         >
           色をすべて消す
         </button>
