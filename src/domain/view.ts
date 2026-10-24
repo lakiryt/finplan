@@ -1,6 +1,7 @@
 import defaultViewJson from '../config/default-view.json'
 import { colorDistance, harmoniousShades, type Random } from './colors'
 import { groupLabel, updateGroup, type CategoryGroup } from './groups'
+import type { Side } from './raw'
 
 /** 表示の設定。分類の設定（ClassifyConfig）とは独立している */
 export interface ViewConfig {
@@ -9,9 +10,14 @@ export interface ViewConfig {
   useSuperCategories: boolean
   /** カテゴリー名 → 色（#rrggbb）。未設定は灰色 */
   colors: Record<string, string>
-  /** 表の並び順そのもの。グループの順に、中身を順に並べたものが表の行になる */
+  /** 支出の表の並び順そのもの。グループの順に、中身を順に並べたものが表の行になる */
   groups: CategoryGroup[]
+  /** 収入の表の並び順（支出の表とは別に持つ） */
+  incomeGroups: CategoryGroup[]
 }
+
+const isGroups = (v: unknown): v is CategoryGroup[] =>
+  Array.isArray(v) && v.every((g) => g && typeof g === 'object' && 'id' in g && Array.isArray((g as CategoryGroup).members))
 
 /** 保存された設定を検証する。v1（離れたカテゴリーもまとめられた形式）は、まとめをグループとして引き継ぐ */
 export function parseViewConfig(raw: unknown): ViewConfig {
@@ -26,17 +32,35 @@ export function parseViewConfig(raw: unknown): ViewConfig {
       useSuperCategories: Boolean(c.useSuperCategories),
       colors,
       groups: supers.filter((s) => s.members?.length).map((s) => ({ id: s.id, label: s.label, members: s.members })),
+      incomeGroups: [],
     }
   }
   if (c.version !== 2) throw new Error(`未対応の表示の設定のバージョンです: ${c.version}`)
-  if (!Array.isArray(c.groups) || !c.groups.every((g) => g && g.id && Array.isArray(g.members))) {
-    throw new Error('groups の形式が正しくありません')
+  if (!isGroups(c.groups)) throw new Error('groups の形式が正しくありません')
+  return {
+    version: 2,
+    useSuperCategories: Boolean(c.useSuperCategories),
+    colors,
+    groups: c.groups,
+    // 収入の表の並び順は後から足したので、無ければ空（データに合わせるときに支出の多い順で補われる）
+    incomeGroups: isGroups(c.incomeGroups) ? c.incomeGroups : [],
   }
-  return { version: 2, useSuperCategories: Boolean(c.useSuperCategories), colors, groups: c.groups as CategoryGroup[] }
 }
 
 /** 初期設定。中身は src/config/default-view.json で編集する */
 export const defaultView: ViewConfig = parseViewConfig(defaultViewJson)
+
+/**
+ * 支出側か収入側の表を groups に置いた設定。下の変更の関数は groups だけを見るので、
+ * 収入の表を編集するときはこれで差し替えて渡し、結果を fromSide で元の場所に戻す
+ */
+export function withSide(view: ViewConfig, side: Side): ViewConfig {
+  return side === 'income' ? { ...view, groups: view.incomeGroups } : view
+}
+
+export function fromSide(base: ViewConfig, side: Side, edited: ViewConfig): ViewConfig {
+  return side === 'income' ? { ...edited, groups: base.groups, incomeGroups: edited.groups } : { ...edited, incomeGroups: base.incomeGroups }
+}
 
 // ---- 表示の設定の変更（どれも新しい ViewConfig を返す）----
 // groups は reconcileGroups でデータに合わせた後のものを渡す（全カテゴリーがどこかのグループに入っている前提）

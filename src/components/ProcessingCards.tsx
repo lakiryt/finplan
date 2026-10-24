@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { updateModule, type ProcessingConfig, type ProcessingModule } from '../domain/processing'
+import { categoryTotals } from '../domain/raw'
 import type { Transaction } from '../domain/types'
 import { yen } from './format'
 
@@ -27,15 +28,7 @@ const INFO: Record<ProcessingModule['type'], { title: string; description: strin
 /** 3. の加工のカード。見出しのチェックで有効・無効を切り替え、有効なカードが 2. に反映される */
 export function ProcessingCards({ config, onChange, transactions }: Props) {
   // カテゴリーごとの収入・支出の合計（全データ）
-  const totals = useMemo(() => {
-    const income = new Map<string, number>()
-    const expense = new Map<string, number>()
-    for (const t of transactions) {
-      const map = t.amount < 0 ? expense : income
-      map.set(t.category, (map.get(t.category) ?? 0) + Math.abs(t.amount))
-    }
-    return { income, expense }
-  }, [transactions])
+  const totals = useMemo(() => ({ income: categoryTotals(transactions, 'income'), expense: categoryTotals(transactions, 'expense') }), [transactions])
 
   return (
     <div className="cards">

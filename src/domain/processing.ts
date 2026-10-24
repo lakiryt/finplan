@@ -1,4 +1,5 @@
 import defaultProcessingJson from '../config/default-processing.json'
+import { sideOf } from './raw'
 import type { Transaction } from './types'
 
 /*
@@ -54,8 +55,7 @@ export function excludedCategories(config: ProcessingConfig): { income: Set<stri
 export function applyProcessing(txs: Transaction[], config: ProcessingConfig): Transaction[] {
   const { income, expense } = excludedCategories(config)
   if (!income.size && !expense.size) return txs
-  // 2. の集計と同じく、マイナスを支出、それ以外を収入として扱う
-  return txs.filter((t) => !(t.amount < 0 ? expense : income).has(t.category))
+  return txs.filter((t) => !(sideOf(t.amount) === 'expense' ? expense : income).has(t.category))
 }
 
 /** モジュールの一部を変える */

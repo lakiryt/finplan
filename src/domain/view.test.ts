@@ -12,6 +12,8 @@ import {
   recolorMembers,
   setCategoryColor,
   setGroupColor,
+  fromSide,
+  withSide,
   type ViewConfig,
 } from './view'
 
@@ -21,6 +23,7 @@ const view = (groups: CategoryGroup[], colors: Record<string, string> = {}, useS
   useSuperCategories,
   colors,
   groups,
+  incomeGroups: [],
 })
 
 describe('display', () => {
@@ -48,7 +51,17 @@ describe('display', () => {
     expect(groupColorsInUse({ groups: [g('x', ['B'], { color: '#0000FF' }), g('y', ['C'])] })).toEqual(['#0000ff'])
   })
 
+  it('edits the income table through withSide / fromSide without touching the expense table', () => {
+    const base = { ...view([g('e', ['A'])]), incomeGroups: [g('i', ['給与'])] }
+    const side = withSide(base, 'income')
+    expect(side.groups).toEqual([g('i', ['給与'])])
+    const edited = changeGroups(side, [g('i', ['給与', '副収入'])])
+    expect(fromSide(base, 'income', edited)).toMatchObject({ groups: [g('e', ['A'])], incomeGroups: [g('i', ['給与', '副収入'])] })
+    expect(fromSide(base, 'expense', changeGroups(withSide(base, 'expense'), [g('e', ['A', 'B'])])).incomeGroups).toEqual(base.incomeGroups)
+  })
+
   it('parses configs (including v1)', () => {
+    expect(parseViewConfig({ version: 2, colors: {}, groups: [] }).incomeGroups).toEqual([])
     expect(defaultView.version).toBe(2)
     const migrated = parseViewConfig({ version: 1, colors: {}, superCategories: [{ id: 's', label: 'S', members: ['A', 'B'] }] })
     expect(migrated.groups).toEqual([{ id: 's', label: 'S', members: ['A', 'B'] }])
