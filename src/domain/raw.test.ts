@@ -31,6 +31,12 @@ describe('raw (no processing)', () => {
     expect(rows[2].byCategory.income).toEqual({ 回収: 500 })
   })
 
+  it('ignores zero-amount records on both sides', () => {
+    const withZero = [...txs, { id: 'z', date: '2026-01-15', amount: 0, memo: '', category: '交通費' }]
+    expect(rankByTotal(categoryTotals(withZero, 'income'))).not.toContain('交通費')
+    expect(rawCategoryStats(withZero, rawMonthlyRows(withZero, '2026-01', '2026-03'), 'income').map((c) => c.category)).not.toContain('交通費')
+  })
+
   it('ranks categories by total expense', () => {
     expect(rankByTotal(categoryTotals(txs, 'expense'))).toEqual(['家賃', '貯蓄', '食費'])
     expect(rankByTotal(categoryTotals(txs, 'income'))).toEqual(['給与', '回収'])

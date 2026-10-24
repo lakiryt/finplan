@@ -4,13 +4,16 @@ import type { Transaction } from './types'
 
 /*
  * 2. の集計。ルールやグループは使わず、CSVのカテゴリーと金額の符号だけで数える。
- * マイナスの取引は支出、それ以外は収入として、どちらもプラスの金額で持つ。
+ * マイナスの取引は支出、プラスの取引は収入として、どちらもプラスの金額で持つ。0円の記録は数えない。
  */
 
 export type Side = 'expense' | 'income'
 
-/** 取引が支出側か収入側か（マイナスなら支出、それ以外は収入） */
-export const sideOf = (amount: number): Side => (amount < 0 ? 'expense' : 'income')
+/**
+ * 取引が支出側か収入側か。0円の記録はどちらでもない（null）。
+ * 0円を収入側に数えると、支出のカテゴリーが収入の表に0円の行として紛れ込むため
+ */
+export const sideOf = (amount: number): Side | null => (amount < 0 ? 'expense' : amount > 0 ? 'income' : null)
 
 export interface RawMonth {
   month: string
@@ -39,6 +42,7 @@ export function rawMonthlyRows(txs: Transaction[], from: string, to: string): Ra
     const row = rows.get(monthOf(tx.date))
     if (!row) continue
     const side = sideOf(tx.amount)
+    if (!side) continue
     const amount = Math.abs(tx.amount)
     row[side] += amount
     row.byCategory[side][tx.category] = (row.byCategory[side][tx.category] ?? 0) + amount

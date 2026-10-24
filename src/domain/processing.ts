@@ -55,7 +55,10 @@ export function excludedCategories(config: ProcessingConfig): { income: Set<stri
 export function applyProcessing(txs: Transaction[], config: ProcessingConfig): Transaction[] {
   const { income, expense } = excludedCategories(config)
   if (!income.size && !expense.size) return txs
-  return txs.filter((t) => !(sideOf(t.amount) === 'expense' ? expense : income).has(t.category))
+  return txs.filter((t) => {
+    const side = sideOf(t.amount)
+    return !side || !(side === 'expense' ? expense : income).has(t.category)
+  })
 }
 
 /** モジュールの一部を変える */
