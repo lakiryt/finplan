@@ -47,7 +47,7 @@ export default function App() {
     <main>
       <header>
         <h1>finplan</h1>
-        <p className="muted">家計簿のCSVから家賃を除いた生活費の実績を集計し、家賃の目安を計算します。</p>
+        <p className="muted">家計簿のCSVから、目的に合わせて加工した収入・支出（生活費）の実績を見ます。家賃などの計画の材料にできます。</p>
       </header>
 
       <section>

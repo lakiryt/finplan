@@ -39,7 +39,7 @@ finplan では「このカテゴリーはこう扱う」をコードに書かな
 3. **画面**: 条件の項目なら `src/components/ConditionEditor.tsx` と `ruleText.ts`（バッジの説明）に、工程なら `src/components/ProcessingCards.tsx` に工程のカードを足す。カードの ⓘ は `ProcessingInfo.tsx` に短く書き、詳しい説明は `docs/` に置く。
 4. **テスト**: `src/domain/processing.test.ts` に、架空のカテゴリー名のデータ（共通のものは `testData.ts`）でテストを足す。期間の境界、無効な条件、ほかの工程との重なり、収支が変わるか変わらないかを確かめる。
 5. **設定の互換性**: 今はまだ後方互換を考えない段階なので、移行処理は書かない。形を変えたら `src/config/default-*.json` と `src/config/local/default-*.json` を新しい形に直す。
-6. **ドキュメント**: `CLAUDE.md` の「条件の意味」と、このスキルの表を更新する。
+6. **ドキュメント**: `CLAUDE.md` の「条件の意味」と、このスキルの表を更新する。考え方に新しい気付きがあれば `docs/principles.md` に1〜2行で足し、詳しくは `docs/` の該当箇所に書く。
 7. 確認: `npx tsc -b`、`npm test`、`npm run lint`。実データで効果を見るなら `npm run inspect`。
 
 ## してはいけないこと
