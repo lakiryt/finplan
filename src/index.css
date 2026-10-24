@@ -166,3 +166,14 @@ button:disabled { opacity: 0.4; cursor: default; }
   font: 0.8rem/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
   background: var(--page); color: inherit; border: 1px solid var(--border); border-radius: 6px; padding: 8px;
 }
+
+/* 棒グラフを押したときの詳細 */
+.chart-detail {
+  min-width: 200px; max-height: 320px; overflow-y: auto; padding: 8px 10px; font-size: 0.85rem;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+.chart-detail-head { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.chart-detail-row { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; }
+.chart-detail-swatch { width: 10px; height: 10px; border-radius: 2px; }
+.chart-detail-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -73,7 +73,7 @@ export function RawOverview({ transactions, from, to }: Props) {
     () =>
       rows.map((r) => {
         // 0 の系列はツールチップに出さない
-        const d: Record<string, number | string | undefined> = { month: r.month }
+        const d: Record<string, number | string | undefined> = { month: r.month, total: r.expense }
         series.forEach((s, i) => (d[`s${i}`] = s.members.reduce((sum, m) => sum + (r.expenseByCategory[m] ?? 0), 0) || undefined))
         return d
       }),
