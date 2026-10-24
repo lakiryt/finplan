@@ -123,14 +123,18 @@ button:disabled { opacity: 0.4; cursor: default; }
 /* 表の横のスーパーカテゴリーのバー。1件だけなら真ん丸、まとめると縦につながる */
 .legend-table td.super-cell { position: relative; width: 104px; min-width: 104px; padding: 0; border-bottom: none; }
 .legend-table th.super-head { border-bottom: none; padding-left: 20px; font-size: 0.8rem; }
-.seg {
-  position: absolute; left: 20px; width: 16px; top: calc(50% - 8px); bottom: calc(50% - 8px);
-  border-radius: 8px; cursor: grab; touch-action: none;
-  transition: top 0.22s ease, bottom 0.22s ease, border-radius 0.22s ease, background-color 0.22s ease;
-}
-.seg:active { cursor: grabbing; }
-.seg.join-up { top: -1px; border-top-left-radius: 0; border-top-right-radius: 0; }
-.seg.join-down { bottom: -1px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+/* 表の上に重ねる層（SuperBlobs）。見た目だけで、押す・ドラッグするのは下のセルの透明な領域 */
+.legend-table .table-wrap { position: relative; overflow-x: auto; }
+.legend-table table { display: table; overflow: visible; width: 100%; }
+.blob-layer { position: absolute; inset: 0; pointer-events: none; }
+.blob-dot, .blob-neck { position: absolute; border-radius: 999px; }
+.seg-hit { position: absolute; left: 14px; width: 28px; top: 0; bottom: 0; cursor: grab; touch-action: none; }
+.seg-hit:active { cursor: grabbing; }
+
+/* 動かした行をしばらく目立たせる */
+@keyframes just-moved { from { background: color-mix(in srgb, var(--accent) 22%, transparent); } to { background: transparent; } }
+.legend-table tr.just-moved td:not(.super-cell) { animation: just-moved 1.2s ease-out; }
+
 .seg-actions {
   position: absolute; left: 42px; top: 50%; transform: translateY(-50%);
   display: flex;

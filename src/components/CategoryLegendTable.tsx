@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { RawCategoryStat } from '../domain/raw'
 import {
   detachCategory,
@@ -14,6 +14,8 @@ import {
 import { ColorPanel, ColorPicker } from './ColorPicker'
 import { yen } from './format'
 import { Popover } from './Popover'
+import { createPullBus } from './pullBus'
+import { ROW_EASING, ROW_MS, SuperBlobs, type BlobLayout } from './SuperBlobs'
 
 export interface LegendRow {
   category: string
@@ -42,6 +44,12 @@ interface Props {
 /** 最初に見せる行数。残りはフェードアウトさせて「すべて表示」で開く */
 const VISIBLE = 8
 const FADE_ROWS = 2
+/** フェードアウトさせる行の不透明度（CSS の .fade-1 / .fade-2 と揃える） */
+const FADE_OPACITY = [0.45, 0.15]
+/** 右端のセルの左端から、バー（滴）の中心までの距離 */
+const BLOB_CENTER = 28
+/** 動かした行を目立たせておく時間 */
+const HIGHLIGHT_MS = 1200
 
 /** ドラッグ中のプレビューで同じIDが振られるよう、ドラッグごとに決まった順でIDを作る */
 const seqUid = (prefix: string): IdGenerator => {
@@ -78,6 +86,15 @@ export function CategoryLegendTable(props: Props) {
   const resize = useRef<ResizeDrag | null>(null)
   const suppressClick = useRef(false)
   const [preview, setPreview] = useState<CategoryGroup[] | null>(null)
+  const [pullBus] = useState(createPullBus)
+  // 表の上に重ねるバーの位置と、行の移動のアニメーション
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const tableRef = useRef<HTMLTableElement>(null)
+  const rowEls = useRef(new Map<string, HTMLTableRowElement>())
+  const lastTops = useRef(new Map<string, number>())
+  const lastOrder = useRef('')
+  const [layout, setLayout] = useState<BlobLayout | null>(null)
+  const [justMoved, setJustMoved] = useState<string>()
 
   const shownGroups = preview ?? groups
   const groupIndexOf = new Map<string, number>()
@@ -93,6 +110,56 @@ export function CategoryLegendTable(props: Props) {
     return categories.indexOf(dragging) < categories.indexOf(category) ? 'drop-after' : 'drop-before'
   }
   const fadeClass = (i: number) => (!expanded && i >= VISIBLE ? `fade fade-${i - VISIBLE + 1}` : '')
+  const groupColor = (g: CategoryGroup) => g.color ?? (g.members.length === 1 ? colorOf.get(g.members[0]) : undefined) ?? gray
+
+  /** 表の上に重ねるバーのために、各行の中心の位置を測る（変わったときだけ更新する） */
+  const measure = () => {
+    const wrap = wrapRef.current
+    const table = tableRef.current
+    const td = table?.querySelector<HTMLElement>('td.super-cell')
+    if (!wrap || !table || !td) return
+    const x = td.getBoundingClientRect().left - wrap.getBoundingClientRect().left + wrap.scrollLeft + BLOB_CENTER
+    // 行の位置は offsetTop で測る（移動のアニメーション中の transform に影響されないように）
+    const measured = shown.flatMap((row, i) => {
+      const el = rowEls.current.get(row.category)
+      if (!el) return []
+      const opacity = !expanded && i >= VISIBLE ? FADE_OPACITY[i - VISIBLE] : 1
+      return [{ category: row.category, y: table.offsetTop + el.offsetTop + el.offsetHeight / 2, opacity }]
+    })
+    const next = { x, rows: measured }
+    setLayout((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next))
+  }
+
+  const orderKey = categories.join('\n')
+  // 並びが変わったら、各行を元の位置から新しい位置へ滑らせる（FLIP）
+  useLayoutEffect(() => {
+    const tops = new Map<string, number>()
+    rowEls.current.forEach((el, c) => tops.set(c, el.offsetTop))
+    if (lastOrder.current && lastOrder.current !== orderKey) {
+      rowEls.current.forEach((el, c) => {
+        const before = lastTops.current.get(c)
+        const after = tops.get(c)
+        if (before === undefined || after === undefined || before === after) return
+        el.animate([{ transform: `translateY(${before - after}px)` }, { transform: 'none' }], { duration: ROW_MS, easing: ROW_EASING })
+      })
+    }
+    lastOrder.current = orderKey
+    lastTops.current = tops
+    measure()
+  })
+
+  // 表の大きさが変わったとき（画面幅・文字の読み込みなど）も測り直す。見張りは1回だけ作り、測るのは最新の measure で
+  const measureRef = useRef(measure)
+  useLayoutEffect(() => {
+    measureRef.current = measure
+  })
+  useLayoutEffect(() => {
+    const table = tableRef.current
+    if (!table) return
+    const observer = new ResizeObserver(() => measureRef.current())
+    observer.observe(table)
+    return () => observer.disconnect()
+  }, [])
   const endRowDrag = () => {
     setArmed(undefined)
     setDragging(undefined)
@@ -119,6 +186,8 @@ export function CategoryLegendTable(props: Props) {
     const d = resize.current
     if (!d) return
     const t = rowIndexAt(e.clientX, e.clientY)
+    const wrap = wrapRef.current
+    if (wrap) pullBus.emit({ groupId: d.id, y: e.clientY - wrap.getBoundingClientRect().top })
     if (t === null) return
     if (t !== d.grab) d.moved = true
     let [a, b] = [d.start, d.end]
@@ -133,6 +202,7 @@ export function CategoryLegendTable(props: Props) {
   }
 
   const endResize = () => {
+    pullBus.emit(null)
     if (preview) onGroupsChange(preview)
     suppressClick.current = Boolean(resize.current?.moved)
     resize.current = null
@@ -144,19 +214,18 @@ export function CategoryLegendTable(props: Props) {
     const g = shownGroups[gi]
     const first = g.members[0] === category
     const last = g.members[g.members.length - 1] === category
-    const color = g.color ?? (g.members.length === 1 ? colorOf.get(category) : undefined) ?? gray
     return (
       <td className="super-cell">
         <Popover
           trigger={(toggle) => (
             <div
-              className={`seg ${first ? '' : 'join-up'} ${last ? '' : 'join-down'}`}
-              style={{ background: color }}
+              className="seg-hit"
               title={groupLabel(g)}
               onPointerDown={(e) => startResize(e, rowIndex)}
               onPointerMove={moveResize}
               onPointerUp={endResize}
               onPointerCancel={() => {
+                pullBus.emit(null)
                 resize.current = null
                 setPreview(null)
               }}
@@ -233,7 +302,8 @@ export function CategoryLegendTable(props: Props) {
 
   return (
     <div className="legend-table">
-      <table>
+      <div className="table-wrap" ref={wrapRef}>
+      <table ref={tableRef}>
         <thead>
           <tr>
             <th aria-label="並べ替え" />
@@ -250,8 +320,12 @@ export function CategoryLegendTable(props: Props) {
           {shown.map((row, i) => (
             <tr
               key={row.category}
+              ref={(el) => {
+                if (el) rowEls.current.set(row.category, el)
+                else rowEls.current.delete(row.category)
+              }}
               data-index={i}
-              className={`${dropClass(row.category)} ${fadeClass(i)} ${dragging === row.category ? 'dragging' : ''}`}
+              className={`${dropClass(row.category)} ${fadeClass(i)} ${dragging === row.category ? 'dragging' : ''} ${justMoved === row.category ? 'just-moved' : ''}`}
               draggable={armed === row.category}
               onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = 'move'
@@ -266,7 +340,13 @@ export function CategoryLegendTable(props: Props) {
               }}
               onDrop={(e) => {
                 e.preventDefault()
-                if (dragging && dragging !== row.category) onGroupsChange(moveCategory(groups, dragging, row.category, uid))
+                if (dragging && dragging !== row.category) {
+                  onGroupsChange(moveCategory(groups, dragging, row.category, uid))
+                  // 動かした行をしばらく目立たせ、どこへ行ったか分かるようにする
+                  const moved = dragging
+                  setJustMoved(moved)
+                  window.setTimeout(() => setJustMoved((cur) => (cur === moved ? undefined : cur)), HIGHLIGHT_MS)
+                }
                 endRowDrag()
               }}
             >
@@ -297,6 +377,8 @@ export function CategoryLegendTable(props: Props) {
           ))}
         </tbody>
       </table>
+      <SuperBlobs layout={layout} groups={shownGroups} colorOf={groupColor} pullBus={pullBus} />
+      </div>
       {rows.length > VISIBLE && (
         <button className="expand" onClick={() => setExpanded((v) => !v)}>
           {expanded ? '∧ 閉じる' : `∨ すべて表示（残り${hidden}件）`}
