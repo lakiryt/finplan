@@ -83,7 +83,8 @@ input.short { width: 4.5em; }
 button:disabled { opacity: 0.4; cursor: default; }
 
 .charts { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 24px; }
-@media (max-width: 760px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+.charts.balance { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+@media (max-width: 760px) { .charts, .charts.balance { grid-template-columns: minmax(0, 1fr); } }
 .row h3 { margin: 0; }
 
 

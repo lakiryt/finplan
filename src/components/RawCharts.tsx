@@ -1,8 +1,10 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, type TooltipContentProps } from 'recharts'
 import { ExpensePie } from './ExpensePie'
 import { man, yen } from './format'
 import type { useChartTheme } from './palette'
+
+type Theme = ReturnType<typeof useChartTheme>
 
 export interface ChartSeries {
   key: string
@@ -17,6 +19,8 @@ export type BalanceMonth = {
   balance: number
   income: number
   expense: number
+  /** 期間の始めからその月までの収支の合計 */
+  cumulative: number
 }
 
 /** 棒グラフの中身。カテゴリー別の積み上げか、月ごとの収支か */
@@ -36,34 +40,43 @@ interface Props {
   bars: BarsSpec
   mean: number
   median: number
-  theme: ReturnType<typeof useChartTheme>
+  theme: Theme
 }
 
 /**
- * 円グラフと月ごとの棒グラフ。描画が重いので、データが変わったときだけ描き直す（memo）。
- * 呼ぶ側は series と bars を useMemo で作ること
+ * 2. のグラフ。描画が重いので、データが変わったときだけ描き直す（memo）。呼ぶ側は series と bars を useMemo で作ること。
+ * - 支出・収入: カテゴリー別の円グラフと、月ごとの積み上げ棒グラフ
+ * - 収支: 月ごとの収支と、累積収支の棒グラフ（黒字は青、赤字は赤）
  */
 export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, bars, mean, median, theme }: Props) {
-  // 詳細を出している月。同じ棒をもう一度押す・グラフの外を押す・Esc で閉じる
-  const [selected, setSelected] = useState<string | null>(null)
-  const barRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (selected === null) return
-    const onDown = (e: MouseEvent) => {
-      if (!barRef.current?.contains(e.target as Node)) setSelected(null)
-    }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelected(null)
-    document.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [selected])
+  const averages = <AverageLines mean={mean} median={median} theme={theme} />
 
-  // 収支は、黒字を青・赤字を赤にする（2色＋0の線で、プラスとマイナスが逆の意味だと分かるように）
-  const positive = theme.series[0]
-  const negative = theme.series[7]
+  if (bars.kind === 'balance') {
+    // 2色＋0の線で、プラスとマイナスが逆の意味だと分かるようにする
+    const signColor = (v: number) => (v >= 0 ? theme.series[0] : theme.series[7])
+    const last = bars.data[bars.data.length - 1]
+    return (
+      <div className="charts balance">
+        <MonthBarChart title={barTitle} data={bars.data} detail={BalanceDetail} theme={theme}>
+          <Bar dataKey="balance" name="収支" maxBarSize={28} isAnimationActive={false}>
+            {bars.data.map((d) => (
+              <Cell key={d.month} fill={signColor(d.balance)} />
+            ))}
+          </Bar>
+          <ReferenceLine y={0} stroke={theme.axis} />
+          {averages}
+        </MonthBarChart>
+        <MonthBarChart title={`累積収支（期間末 ${yen(last?.cumulative ?? 0)}）`} data={bars.data} detail={CumulativeDetail} theme={theme}>
+          <Bar dataKey="cumulative" name="累積収支" maxBarSize={28} isAnimationActive={false}>
+            {bars.data.map((d) => (
+              <Cell key={d.month} fill={signColor(d.cumulative)} />
+            ))}
+          </Bar>
+          <ReferenceLine y={0} stroke={theme.axis} />
+        </MonthBarChart>
+      </div>
+    )
+  }
 
   return (
     <div className="charts">
@@ -76,68 +89,101 @@ export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, b
           grid={theme.grid}
         />
       </div>
-      <div ref={barRef}>
-        <h3>{barTitle}</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart
-            data={bars.data}
-            margin={{ top: 16, right: 8, bottom: 0, left: 0 }}
-            onClick={({ activeTooltipIndex }) => {
-              const key = activeTooltipIndex === undefined || activeTooltipIndex === null ? null : String(activeTooltipIndex)
-              setSelected((cur) => (key === null || cur === key ? null : key))
-            }}
-          >
-            <CartesianGrid vertical={false} stroke={theme.grid} />
-            <XAxis dataKey="month" stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} />
-            <YAxis tickFormatter={man} stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} axisLine={false} width={48} />
-            {/* 棒を押すと詳細が出て、閉じるまで残る */}
-            <Tooltip
-              trigger="click"
-              active={selected !== null}
-              content={bars.kind === 'stacked' ? MonthDetail : BalanceDetail}
-              cursor={{ fill: theme.grid, opacity: 0.5 }}
-            />
-            {bars.kind === 'stacked' ? (
-              series.map((s, i) => (
-                <Bar
-                  key={s.key}
-                  dataKey={`s${i}`}
-                  name={s.label}
-                  stackId="a"
-                  fill={s.color}
-                  stroke={theme.surface}
-                  strokeWidth={1}
-                  radius={i === series.length - 1 ? [4, 4, 0, 0] : 0}
-                  maxBarSize={28}
-                  isAnimationActive={false}
-                />
-              ))
-            ) : (
-              <Bar dataKey="balance" name="収支" maxBarSize={28} isAnimationActive={false}>
-                {bars.data.map((d) => (
-                  <Cell key={d.month} fill={d.balance >= 0 ? positive : negative} />
-                ))}
-              </Bar>
-            )}
-            {bars.kind === 'balance' && <ReferenceLine y={0} stroke={theme.axis} />}
-            <ReferenceLine
-              y={mean}
-              stroke={theme.ink}
-              strokeDasharray="4 4"
-              label={{ value: `平均 ${yen(mean)}`, position: 'insideTopRight', fill: theme.ink, fontSize: 12 }}
-            />
-            <ReferenceLine
-              y={median}
-              stroke={theme.muted}
-              strokeDasharray="1 3"
-              label={{ value: `中央値 ${yen(median)}`, position: 'insideBottomRight', fill: theme.ink, fontSize: 12 }}
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      <MonthBarChart title={barTitle} data={bars.data} detail={MonthDetail} theme={theme}>
+        {series.map((s, i) => (
+          <Bar
+            key={s.key}
+            dataKey={`s${i}`}
+            name={s.label}
+            stackId="a"
+            fill={s.color}
+            stroke={theme.surface}
+            strokeWidth={1}
+            radius={i === series.length - 1 ? [4, 4, 0, 0] : 0}
+            maxBarSize={28}
+            isAnimationActive={false}
+          />
+        ))}
+        {averages}
+      </MonthBarChart>
     </div>
   )
 })
+
+/**
+ * 月ごとの棒グラフの枠。棒を押すと詳細が出て、同じ棒をもう一度押す・グラフの外を押す・Esc で閉じる
+ */
+function MonthBarChart({
+  title,
+  data,
+  detail,
+  theme,
+  children,
+}: {
+  title: string
+  data: Record<string, unknown>[]
+  detail: (props: TooltipContentProps) => ReactNode
+  theme: Theme
+  children: ReactNode
+}) {
+  const [selected, setSelected] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (selected === null) return
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setSelected(null)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelected(null)
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [selected])
+
+  return (
+    <div ref={ref}>
+      <h3>{title}</h3>
+      <ResponsiveContainer width="100%" height={300}>
+        <BarChart
+          data={data}
+          margin={{ top: 16, right: 8, bottom: 0, left: 0 }}
+          onClick={({ activeTooltipIndex }) => {
+            const key = activeTooltipIndex === undefined || activeTooltipIndex === null ? null : String(activeTooltipIndex)
+            setSelected((cur) => (key === null || cur === key ? null : key))
+          }}
+        >
+          <CartesianGrid vertical={false} stroke={theme.grid} />
+          <XAxis dataKey="month" stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} />
+          <YAxis tickFormatter={man} stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} axisLine={false} width={48} />
+          <Tooltip trigger="click" active={selected !== null} content={detail} cursor={{ fill: theme.grid, opacity: 0.5 }} />
+          {children}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+/** 平均（破線）と中央値（点線）の線 */
+function AverageLines({ mean, median, theme }: { mean: number; median: number; theme: Theme }) {
+  return (
+    <>
+      <ReferenceLine
+        y={mean}
+        stroke={theme.ink}
+        strokeDasharray="4 4"
+        label={{ value: `平均 ${yen(mean)}`, position: 'insideTopRight', fill: theme.ink, fontSize: 12 }}
+      />
+      <ReferenceLine
+        y={median}
+        stroke={theme.muted}
+        strokeDasharray="1 3"
+        label={{ value: `中央値 ${yen(median)}`, position: 'insideBottomRight', fill: theme.ink, fontSize: 12 }}
+      />
+    </>
+  )
+}
 
 /**
  * 積み上げ棒を押したときの詳細。月と合計を上に出し、内訳は表と同じ順（表の上の行が先）に並べる。
@@ -148,18 +194,11 @@ function MonthDetail({ active, payload, label }: TooltipContentProps) {
   const total = Number(payload[0].payload.total ?? 0)
   return (
     <div className="chart-detail">
-      <div className="chart-detail-head">
-        <span>{label}</span>
-        <strong className="num">{yen(total)}</strong>
-      </div>
+      <DetailHead label={label} value={total} />
       {payload
         .filter((p) => Number(p.value) > 0)
         .map((p) => (
-          <div key={String(p.dataKey)} className="chart-detail-row">
-            <span className="chart-detail-swatch" style={{ background: p.color }} />
-            <span className="chart-detail-name">{p.name}</span>
-            <span className="num">{yen(Number(p.value))}</span>
-          </div>
+          <DetailRow key={String(p.dataKey)} color={p.color} name={String(p.name)} value={Number(p.value)} />
         ))}
     </div>
   )
@@ -171,20 +210,40 @@ function BalanceDetail({ active, payload, label }: TooltipContentProps) {
   const d = payload[0].payload as BalanceMonth
   return (
     <div className="chart-detail">
-      <div className="chart-detail-head">
-        <span>{label}</span>
-        <strong className="num">{yen(d.balance)}</strong>
-      </div>
-      <div className="chart-detail-row">
-        <span />
-        <span className="chart-detail-name">収入</span>
-        <span className="num">{yen(d.income)}</span>
-      </div>
-      <div className="chart-detail-row">
-        <span />
-        <span className="chart-detail-name">支出</span>
-        <span className="num">{yen(d.expense)}</span>
-      </div>
+      <DetailHead label={label} value={d.balance} />
+      <DetailRow name="収入" value={d.income} />
+      <DetailRow name="支出" value={d.expense} />
+    </div>
+  )
+}
+
+/** 累積収支の棒を押したときの詳細。累積と、その月の収支 */
+function CumulativeDetail({ active, payload, label }: TooltipContentProps) {
+  if (!active || !payload?.length) return null
+  const d = payload[0].payload as BalanceMonth
+  return (
+    <div className="chart-detail">
+      <DetailHead label={`${label}までの累積`} value={d.cumulative} />
+      <DetailRow name="この月の収支" value={d.balance} />
+    </div>
+  )
+}
+
+function DetailHead({ label, value }: { label: ReactNode; value: number }) {
+  return (
+    <div className="chart-detail-head">
+      <span>{label}</span>
+      <strong className="num">{yen(value)}</strong>
+    </div>
+  )
+}
+
+function DetailRow({ name, value, color }: { name: string; value: number; color?: string }) {
+  return (
+    <div className="chart-detail-row">
+      {color ? <span className="chart-detail-swatch" style={{ background: color }} /> : <span />}
+      <span className="chart-detail-name">{name}</span>
+      <span className="num">{yen(value)}</span>
     </div>
   )
 }

@@ -3,7 +3,7 @@ import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
 import { flatten, reconcileGroups, sortByTotal } from '../domain/groups'
 import { applyProcessing, excludedCategories, hasActiveModule, type ProcessingConfig } from '../domain/processing'
-import { categoryTotals, emptyCategoryStat, rankByTotal, rawCategoryStats, rawMonthlyRows, type Side } from '../domain/raw'
+import { categoryTotals, emptyCategoryStat, rankByTotal, rawCategoryStats, rawMonthlyRows, type RawMonth, type Side } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
 import {
@@ -25,7 +25,7 @@ import { UndoSessionContext, useUndoable } from '../state/undo'
 import { JsonExportDialog } from './JsonExportDialog'
 import { CategoryLegendTable, type LegendRow } from './legend/CategoryLegendTable'
 import { useChartTheme } from './palette'
-import { RawCharts, type BarsSpec } from './RawCharts'
+import { RawCharts, type BalanceMonth, type BarsSpec } from './RawCharts'
 import { SummaryCard } from './SummaryCard'
 
 interface Props {
@@ -42,6 +42,16 @@ type Mode = 'expense' | 'income' | 'balance'
 const MODES: Mode[] = ['expense', 'income', 'balance']
 
 const uid = () => crypto.randomUUID()
+
+/** 月ごとの収支と、期間の始めからの累積 */
+function balanceMonths(rows: RawMonth[]): BalanceMonth[] {
+  let cumulative = 0
+  return rows.map((r) => {
+    const balance = r.income - r.expense
+    cumulative += balance
+    return { month: r.month, balance, income: r.income, expense: r.expense, cumulative }
+  })
+}
 
 /** 2. 支出と収入。カードで支出・収入・収支を切り替え、グラフと表（スーパーカテゴリー）で中身を見る */
 export function RawOverview({ transactions, processing, from, to }: Props) {
@@ -108,7 +118,7 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
   const bars = useMemo<BarsSpec>(
     () =>
       mode === 'balance'
-        ? { kind: 'balance', data: rows.map((r) => ({ month: r.month, balance: r.income - r.expense, income: r.income, expense: r.expense })) }
+        ? { kind: 'balance', data: balanceMonths(rows) }
         : {
             kind: 'stacked',
             data: rows.map((r) => {
@@ -139,7 +149,7 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
           {activeLabels.length
             ? `3. の加工（${activeLabels.join('・')}）を反映しています。`
             : '3. の加工はまだ反映していません（貯金・口座移動なども含まれます）。'}
-          カードを押すと、下のグラフと表が切り替わります。
+          カードを押すと、下のグラフと表が切り替わります（収支のときは、月ごとの収支と累積収支のグラフになります）。
         </p>
         <div className="summary-cards">
           {MODES.map((m) => (
@@ -163,61 +173,66 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
           theme={theme}
         />
 
-        <div className="row">
-          <h3>{labels[side]}のカテゴリー</h3>
-          <label>
-            <input
-              type="checkbox"
-              checked={view.useSuperCategories}
-              onChange={(e) => edit({ ...current, useSuperCategories: e.target.checked })}
+        {/* 収支のときはカテゴリーの内訳を見ないので、表とその操作を出さない */}
+        {mode !== 'balance' && (
+          <>
+            <div className="row">
+              <h3>{labels[side]}のカテゴリー</h3>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={view.useSuperCategories}
+                  onChange={(e) => edit({ ...current, useSuperCategories: e.target.checked })}
+                />
+                グラフをスーパーカテゴリーでまとめる
+              </label>
+              <span className="muted small">
+                表の順番がグラフの順番（棒グラフは下から）です。左のつまみ（⋮⋮）で並べ替え、右のバーの端をドラッグするか ↑↓ でスーパーカテゴリーにまとめます。
+              </span>
+            </div>
+            <CategoryLegendTable
+              rows={legendRows}
+              groups={groups}
+              onGroupsChange={(g) => edit(changeGroups(current, g))}
+              onColorChange={(category, color) => edit(setCategoryColor(current, category, color))}
+              onGroupColorChange={(id, color) => edit(setGroupColor(current, id, color))}
+              onRecolorMembers={(id) => edit(recolorMembers(current, id))}
+              categoryColorsInUse={categoryColorsInUse(current)}
+              groupColorsInUse={groupColorsInUse(current)}
+              gray={theme.other}
+              uid={uid}
             />
-            グラフをスーパーカテゴリーでまとめる
-          </label>
-          <span className="muted small">
-            表の順番がグラフの順番（棒グラフは下から）です。左のつまみ（⋮⋮）で並べ替え、右のバーの端をドラッグするか ↑↓ でスーパーカテゴリーにまとめます。
-          </span>
-        </div>
-        <CategoryLegendTable
-          rows={legendRows}
-          groups={groups}
-          onGroupsChange={(g) => edit(changeGroups(current, g))}
-          onColorChange={(category, color) => edit(setCategoryColor(current, category, color))}
-          onGroupColorChange={(id, color) => edit(setGroupColor(current, id, color))}
-          onRecolorMembers={(id) => edit(recolorMembers(current, id))}
-          categoryColorsInUse={categoryColorsInUse(current)}
-          groupColorsInUse={groupColorsInUse(current)}
-          gray={theme.other}
-          uid={uid}
-        />
-        <div className="row">
-          <button onClick={undo} disabled={!canUndo} title={`Ctrl+Z / ⌘Z でも戻せます（あと${steps}手）`}>
-            ↶ 元に戻す
-          </button>
-          <button onClick={() => edit({ ...current, groups: sortByTotal(groups, totals) })}>多い順に並べ替える</button>
-          <button
-            onClick={() => edit(clearColors(current))}
-            disabled={!categoryColorsInUse(current).length && !groupColorsInUse(current).length}
-          >
-            色をすべて消す
-          </button>
-          {/* 元に戻せるので、確認は出さない */}
-          <button onClick={() => setView(initialView)}>表示の設定をすべて初期に戻す</button>
-          {/* 並び順をすべて残すため、データに合わせた後の設定を書き出す */}
-          <button onClick={() => setExporting(fromSide(view, side, current))}>表示の設定を書き出す</button>
-          <label className="button">
-            表示の設定を読み込む
-            <input
-              type="file"
-              accept=".json,application/json"
-              hidden
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) importView(file)
-                e.target.value = ''
-              }}
-            />
-          </label>
-        </div>
+            <div className="row">
+              <button onClick={undo} disabled={!canUndo} title={`Ctrl+Z / ⌘Z でも戻せます（あと${steps}手）`}>
+                ↶ 元に戻す
+              </button>
+              <button onClick={() => edit({ ...current, groups: sortByTotal(groups, totals) })}>多い順に並べ替える</button>
+              <button
+                onClick={() => edit(clearColors(current))}
+                disabled={!categoryColorsInUse(current).length && !groupColorsInUse(current).length}
+              >
+                色をすべて消す
+              </button>
+              {/* 元に戻せるので、確認は出さない */}
+              <button onClick={() => setView(initialView)}>表示の設定をすべて初期に戻す</button>
+              {/* 並び順をすべて残すため、データに合わせた後の設定を書き出す */}
+              <button onClick={() => setExporting(fromSide(view, side, current))}>表示の設定を書き出す</button>
+              <label className="button">
+                表示の設定を読み込む
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) importView(file)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+            </div>
+          </>
+        )}
       </div>
       <JsonExportDialog data={exporting} filename="finplan-view.json" title="表示の設定" onClose={() => setExporting(null)} />
     </UndoSessionContext.Provider>
