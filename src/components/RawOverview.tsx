@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
 import { emptyCategoryStat, expenseRanking, expenseTotals, rawExpenseByCategory, rawMonthlyRows } from '../domain/raw'
@@ -17,10 +17,11 @@ import {
   setGroupColor,
   type ViewConfig,
 } from '../domain/view'
-import { downloadJson, useStoredState } from '../state/storage'
+import { useStoredState } from '../state/storage'
 import { UndoSessionContext, useUndoable } from '../state/undo'
 import { CategoryLegendTable, type LegendRow } from './legend/CategoryLegendTable'
 import { yen } from './format'
+import { JsonExportDialog } from './JsonExportDialog'
 import { useChartTheme } from './palette'
 import { RawCharts } from './RawCharts'
 import { StatTiles } from './StatTiles'
@@ -40,6 +41,8 @@ export function RawOverview({ transactions, from, to }: Props) {
   // 表示の設定の変更はすべてここを通し、元に戻せるようにする
   // 窓（ポップアップ）が開いている間の変更は1手にまとめる
   const { set: setView, undo, canUndo, steps, session } = useUndoable(view, saveView)
+  /** 書き出す画面に出している設定（開いた時点のもの） */
+  const [exporting, setExporting] = useState<ViewConfig | null>(null)
 
   const inPeriod = useMemo(() => filterByMonths(transactions, from, to), [transactions, from, to])
   const rows = useMemo(() => rawMonthlyRows(inPeriod, from, to), [inPeriod, from, to])
@@ -143,7 +146,7 @@ export function RawOverview({ transactions, from, to }: Props) {
             表示の設定をすべて初期に戻す
           </button>
           {/* 並び順をすべて残すため、データに合わせた後の設定を書き出す */}
-          <button onClick={() => downloadJson('finplan-view.json', current)}>表示の設定を書き出す</button>
+          <button onClick={() => setExporting(current)}>表示の設定を書き出す</button>
           <label className="button">
             表示の設定を読み込む
             <input
@@ -159,6 +162,7 @@ export function RawOverview({ transactions, from, to }: Props) {
           </label>
         </div>
       </div>
+      <JsonExportDialog data={exporting} filename="finplan-view.json" title="表示の設定" onClose={() => setExporting(null)} />
     </UndoSessionContext.Provider>
   )
 }
