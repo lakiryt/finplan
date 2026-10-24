@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { parseCsv } from './importers'
-import { applyProcessing, defaultProcessing, excludedCategories, hasActiveModule, parseProcessingConfig, updateModule, type ProcessingConfig } from './processing'
+import {
+  applyProcessing,
+  defaultProcessing,
+  excludedCategories,
+  hasActiveModule,
+  offsetTargets,
+  parseProcessingConfig,
+  updateModule,
+  type ProcessingConfig,
+} from './processing'
+import { rawMonthlyRows } from './raw'
 import { csv } from './testData'
 
 const config: ProcessingConfig = {
@@ -36,7 +46,44 @@ describe('processing', () => {
   })
 
   it('parses configs', () => {
-    expect(defaultProcessing.modules.map((m) => m.type)).toEqual(['excludeIncome', 'excludeExpense'])
+    expect(defaultProcessing.modules.map((m) => m.type)).toEqual(['excludeIncome', 'excludeExpense', 'offset'])
     expect(() => parseProcessingConfig({ version: 1, modules: [{ id: 'a', type: 'nope', categories: [] }] })).toThrow()
+  })
+})
+
+describe('offset', () => {
+  const txs = parseCsv(csv).transactions
+  const offset: ProcessingConfig = {
+    version: 1,
+    modules: [
+      { id: 'inc', type: 'excludeIncome', enabled: true, categories: ['回収'] },
+      { id: 'off', type: 'offset', enabled: true, pairs: [{ from: '回収', to: '食費' }] },
+    ],
+  }
+
+  it('turns income records into reductions of the chosen expense category, before exclusions', () => {
+    const out = applyProcessing(txs, offset)
+    const moved = out.find((t) => t.memo === '割り勘 半額')!
+    expect(moved).toMatchObject({ category: '食費', side: 'expense', amount: 500 })
+    const rows = rawMonthlyRows(out, '2026-03', '2026-03')
+    // 3月: 食費 800 − 回収 500 = 300、収入は 0
+    expect(rows[0]).toMatchObject({ expense: 300, income: 0 })
+    expect(rows[0].byCategory.expense).toEqual({ 食費: 300 })
+  })
+
+  it('keeps the balance the same as leaving the record in income', () => {
+    const balance = (list: typeof txs) => rawMonthlyRows(list, '2026-01', '2026-03').reduce((s, r) => s + r.income - r.expense, 0)
+    expect(balance(applyProcessing(txs, offset))).toBe(balance(txs))
+  })
+
+  it('ignores pairs without a target and disabled cards', () => {
+    expect(offsetTargets(updateModule(offset, 'off', { pairs: [{ from: '回収', to: '' }] })).size).toBe(0)
+    expect(hasActiveModule(updateModule(offset, 'off', { enabled: false }), 'offset')).toBe(false)
+    expect(hasActiveModule(offset, 'offset')).toBe(true)
+  })
+
+  it('adds cards missing from older saved configs', () => {
+    const old = parseProcessingConfig({ version: 1, modules: [{ id: 'real-income', type: 'excludeIncome', enabled: true, categories: [] }] })
+    expect(old.modules.map((m) => m.type)).toEqual(['excludeIncome', 'excludeExpense', 'offset'])
   })
 })

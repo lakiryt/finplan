@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
 import { flatten, reconcileGroups, sortByTotal } from '../domain/groups'
-import { applyProcessing, excludedCategories, hasActiveModule, type ProcessingConfig } from '../domain/processing'
+import { applyProcessing, excludedCategories, hasActiveModule, offsetTargets, type ProcessingConfig } from '../domain/processing'
 import { categoryTotals, emptyCategoryStat, rankByTotal, rawCategoryStats, rawMonthlyRows, type RawMonth, type Side } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
@@ -100,11 +100,17 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
   const edit = (next: ViewConfig) => setView(fromSide(view, side, next))
 
   const excludedHere = side === 'income' ? excluded.income : excluded.expense
+  const offsets = useMemo(() => offsetTargets(processing), [processing])
+  /** 3. の加工でこの行に起きていること（行を薄くして添える）。相殺は除外より優先される */
+  const processedNote = (c: string) => {
+    if (side === 'income' && offsets.has(c)) return `${offsets.get(c)}から差し引き中`
+    return excludedHere.has(c) ? `${labels[side]}から除外中` : undefined
+  }
   const legendRows: LegendRow[] = flatten(groups).map((c) => ({
     category: c,
     stat: stats.get(c) ?? emptyCategoryStat(c),
     color: view.colors[c],
-    excluded: excludedHere.has(c) ? `${labels[side]}から除外中` : undefined,
+    excluded: processedNote(c),
   }))
 
   // グラフは重いので、系列とデータは関係する値が変わったときだけ作り直す
@@ -139,7 +145,11 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
     }
   }
 
-  const activeLabels = [labels.income !== '収入' && labels.income, labels.expense !== '支出' && labels.expense].filter(Boolean)
+  const activeLabels = [
+    labels.income !== '収入' && labels.income,
+    labels.expense !== '支出' && labels.expense,
+    hasActiveModule(processing, 'offset') && '相殺',
+  ].filter(Boolean)
 
   return (
     <UndoSessionContext.Provider value={session}>
