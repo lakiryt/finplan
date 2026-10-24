@@ -47,7 +47,8 @@ interface PanelProps {
 
 /** 色の選択の中身。「無色・基本の色・使用中の色・その他の色」。窓の中にもそのまま置ける */
 export function ColorPanel({ value, onChange, inUse, allowNone = true, onPicked }: PanelProps) {
-  const used = inUse.filter((c) => !BASIC_COLORS.some((b) => same(b.hex, c)))
+  // 基本の色と同じでも、使っている色はすべて「使用中の色」に出す
+  const used = inUse
   const pick = (color: string | undefined) => {
     onChange(color)
     onPicked?.()
@@ -88,21 +89,25 @@ export function ColorPanel({ value, onChange, inUse, allowNone = true, onPicked 
 
 /**
  * ブラウザの色選択。選んでいる最中に毎回反映するとグラフの描き直しで重いので、
- * 選び終わったとき（change）か、窓が閉じて入力欄が消えるときに、最後に選んだ色を1回だけ反映する
+ * 選び終わったとき（change）か、窓が閉じて入力欄が消えるときに、最後に選んだ色を1回だけ反映する。
+ * 見本から色を選んだら入力欄もその色にし、そこから微調整できるようにする
  */
 function CustomColor({ value, onCommit }: { value?: string; onCommit: (color: string) => void }) {
   const ref = useRef<HTMLInputElement>(null)
   const commit = useRef(onCommit)
+  const pending = useRef<string | null>(null)
   useEffect(() => {
     commit.current = onCommit
   })
   useEffect(() => {
+    if (ref.current && pending.current === null) ref.current.value = value ?? '#888888'
+  }, [value])
+  useEffect(() => {
     const el = ref.current
     if (!el) return
-    let pending: string | null = null
-    const onInput = () => (pending = el.value)
+    const onInput = () => (pending.current = el.value)
     const onChange = () => {
-      pending = null
+      pending.current = null
       commit.current(el.value)
     }
     el.addEventListener('input', onInput)
@@ -110,7 +115,7 @@ function CustomColor({ value, onCommit }: { value?: string; onCommit: (color: st
     return () => {
       el.removeEventListener('input', onInput)
       el.removeEventListener('change', onChange)
-      if (pending) commit.current(pending)
+      if (pending.current) commit.current(pending.current)
     }
   }, [])
   return <input ref={ref} type="color" defaultValue={value ?? '#888888'} />
