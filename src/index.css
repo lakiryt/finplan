@@ -70,7 +70,24 @@ tr.warn td { background: var(--warn-bg); }
 .fields { display: grid; gap: 8px; max-width: 560px; }
 .field { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .inline-button { margin-left: 8px; }
+.takehome-dialog { width: min(720px, calc(100vw - 32px)); }
 .takehome .fields { max-width: none; margin-bottom: 8px; }
+.tabs { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+.tab {
+  display: grid; justify-items: start; gap: 1px; padding: 6px 12px; border: none; border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0; background: none; color: inherit; font: inherit; cursor: pointer; white-space: nowrap;
+}
+.tab:hover { background: color-mix(in oklch, var(--accent) 6%, transparent); }
+.tab.active { border-bottom-color: var(--accent); font-weight: 600; }
+.tab-sub { font-size: 0.75rem; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.tab.off .tab-sub { font-style: italic; }
+.tab-panel { display: grid; gap: 8px; min-height: 260px; font-size: 0.9rem; }
+.tab-panel p { margin: 0; }
+.tab-panel .editor-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.tab-panel .editor-row label, .include { display: inline-flex; align-items: center; gap: 4px; }
+.include { font-weight: 600; }
+.nhi-parts input { width: 7em; }
+.takehome-summary tr.off td { color: var(--muted); }
 .takehome table { display: table; width: 100%; margin: 8px 0; }
 .takehome-result td { font-weight: 600; border-top: 2px solid var(--line); }
 
