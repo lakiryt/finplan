@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
 import { flatten, reconcileGroups, sortByTotal } from '../domain/groups'
@@ -13,7 +13,6 @@ import {
   displaySeries,
   fromSide,
   groupColorsInUse,
-  parseViewConfig,
   recolorMembers,
   setCategoryColor,
   setGroupColor,
@@ -23,7 +22,6 @@ import {
 import { useStoredState } from '../state/storage'
 import { UndoSessionContext, useUndoable } from '../state/undo'
 import { yen } from './format'
-import { JsonExportDialog } from './JsonExportDialog'
 import { CategoryLegendTable, type LegendRow } from './legend/CategoryLegendTable'
 import { useChartTheme } from './palette'
 import { RawCharts, type BalanceMonth, type BarsSpec } from './RawCharts'
@@ -36,6 +34,9 @@ interface Props {
   processing: ProcessingConfig
   from: string
   to: string
+  /** 表示の設定（並び順・大分類・色）。書き出し・読み込みは 1. でまとめて行う */
+  view: ViewConfig
+  onViewChange: (view: ViewConfig) => void
   /** 棒グラフの詳細から、その月の記録を開く */
   onShowMonth: (side: Side, month: string) => void
 }
@@ -57,14 +58,11 @@ function balanceMonths(rows: RawMonth[]): BalanceMonth[] {
 }
 
 /** 2. 支出と収入。カードで支出・収入・収支を切り替え、グラフと表（大分類）で中身を見る */
-export function RawOverview({ transactions, processing, from, to, onShowMonth }: Props) {
+export function RawOverview({ transactions, processing, from, to, view, onViewChange, onShowMonth }: Props) {
   const theme = useChartTheme()
-  const [view, saveView] = useStoredState<ViewConfig>('finplan.view', initialView, parseViewConfig)
   // 表示の設定の変更はすべてここを通し、元に戻せるようにする
   // 窓（ポップアップ）が開いている間の変更は1手にまとめる
-  const { set: setView, undo, canUndo, steps, session } = useUndoable(view, saveView)
-  /** 書き出す画面に出している設定（開いた時点のもの） */
-  const [exporting, setExporting] = useState<ViewConfig | null>(null)
+  const { set: setView, undo, canUndo, steps, session } = useUndoable(view, onViewChange)
   // どのカードを選んでいるかは見方の切り替えなので、元に戻すの対象にはしない
   const [mode, setMode] = useStoredState<Mode>('finplan.overviewMode', 'expense')
   const side: Side = mode === 'income' ? 'income' : 'expense'
@@ -145,14 +143,6 @@ export function RawOverview({ transactions, processing, from, to, onShowMonth }:
           },
     [mode, rows, series, side],
   )
-
-  async function importView(file: File) {
-    try {
-      setView(parseViewConfig(JSON.parse(await file.text())))
-    } catch (e) {
-      alert(`表示の設定を読み込めませんでした: ${e instanceof Error ? e.message : e}`)
-    }
-  }
 
   const activeLabels = [activeRules(processing, 'offset').length && '相殺', activeRules(processing, 'exclude').length && '除外'].filter(Boolean)
 
@@ -237,26 +227,10 @@ export function RawOverview({ transactions, processing, from, to, onShowMonth }:
               </button>
               {/* 元に戻せるので、確認は出さない */}
               <button onClick={() => setView(initialView)}>表示の設定をすべて初期に戻す</button>
-              {/* 並び順をすべて残すため、データに合わせた後の設定を書き出す */}
-              <button onClick={() => setExporting(fromSide(view, side, current))}>表示の設定を書き出す</button>
-              <label className="button">
-                表示の設定を読み込む
-                <input
-                  type="file"
-                  accept=".json,application/json"
-                  hidden
-                  onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    if (file) importView(file)
-                    e.target.value = ''
-                  }}
-                />
-              </label>
             </div>
           </>
         )}
       </div>
-      <JsonExportDialog data={exporting} filename="finplan-view.json" title="表示の設定" onClose={() => setExporting(null)} />
     </UndoSessionContext.Provider>
   )
 }

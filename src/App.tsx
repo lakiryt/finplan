@@ -4,13 +4,15 @@ import { ProcessingCards } from './components/ProcessingCards'
 import { RecordDialog } from './components/RecordDialog'
 import { RentBudget } from './components/RentBudget'
 import { RawOverview } from './components/RawOverview'
+import { SettingsIO } from './components/SettingsIO'
 import type { RecordsRequest, RuleDraft } from './components/ruleText'
-import { initialProcessing } from './config/initial'
+import { initialProcessing, initialView } from './config/initial'
 import { filterByMonths, monthOf, monthRange } from './domain/aggregate'
 import { applyProcessing, parseProcessingConfig, type ProcessingConfig } from './domain/processing'
 import { categoryTotals, rankByTotal, rawMonthlyRows, type Side } from './domain/raw'
 import { seriesStats } from './domain/stats'
 import type { Transaction } from './domain/types'
+import { parseViewConfig, type ViewConfig } from './domain/view'
 import { removeStored, useStoredState } from './state/storage'
 
 const TX_KEY = 'finplan.transactions'
@@ -39,6 +41,7 @@ function monthDays(month: string) {
 export default function App() {
   const [transactions, setTransactions] = useStoredState<Transaction[]>(TX_KEY, [])
   const [processing, setProcessing] = useStoredState<ProcessingConfig>('finplan.processing', initialProcessing, parseProcessingConfig)
+  const [view, setView] = useStoredState<ViewConfig>('finplan.view', initialView, parseViewConfig)
   const initial = useMemo(() => defaultPeriod(transactions), [transactions])
   const [period, setPeriod] = useState<{ from: string; to: string } | null>(null)
   const from = period?.from ?? initial?.from ?? ''
@@ -114,13 +117,25 @@ export default function App() {
             <span className="muted small">以下のすべての集計に使われます</span>
           </div>
         )}
+        <div className="row">
+          <span>設定（2. の表示と 3. の加工）</span>
+          <SettingsIO view={view} processing={processing} transactions={transactions} onViewChange={setView} onProcessingChange={setProcessing} />
+        </div>
       </section>
 
       {transactions.length > 0 && initial && (
         <>
           <section>
             <h2>2. 支出と収入</h2>
-            <RawOverview transactions={transactions} processing={processing} from={from} to={to} onShowMonth={showMonth} />
+            <RawOverview
+              transactions={transactions}
+              processing={processing}
+              from={from}
+              to={to}
+              view={view}
+              onViewChange={setView}
+              onShowMonth={showMonth}
+            />
           </section>
 
           <section>
