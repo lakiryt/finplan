@@ -9,7 +9,7 @@ import type { Transaction } from './types'
 
 /**
  * 記録を選ぶ条件。指定した項目すべてに当てはまる記録が対象（未指定の項目は問わない）。
- * side は必須で、カテゴリー・メモ・期間のどれか1つ以上がないと、全件に当たってしまうので無効扱い
+ * side は必須で、カテゴリー・メモ・期間・選んだ記録のどれか1つ以上がないと、全件に当たってしまうので無効扱い
  */
 export interface Condition {
   /** 収入側（プラス）の記録か、支出側（マイナス）の記録か */
@@ -21,6 +21,8 @@ export interface Condition {
   from?: string
   /** YYYY-MM-DD（この日を含む） */
   to?: string
+  /** 一覧から選んだ記録（recordKey）。メモや期間では絞りきれない記録を、1件ずつ指定する */
+  records?: string[]
 }
 
 /** 除外: 条件に当たる記録を、その側から除く */
@@ -71,6 +73,7 @@ function parseCondition(raw: unknown): Condition {
   if (c.memoIsRegex) cond.memoIsRegex = true
   if (str(c.from)) cond.from = c.from as string
   if (str(c.to)) cond.to = c.to as string
+  if (Array.isArray(c.records) && c.records.length > 0) cond.records = c.records.filter((k): k is string => typeof k === 'string')
   return cond
 }
 
@@ -100,11 +103,18 @@ export const defaultProcessing: ProcessingConfig = parseProcessingConfig(default
 
 // ---- 当てはめ ----
 
-/** カテゴリー・メモ・期間のどれか1つ以上を指定しているか（無ければ全件に当たるので無効扱い） */
-export const hasCriteria = (c: Condition) => c.category !== undefined || Boolean(c.memo || c.from || c.to)
+/**
+ * 記録を見分けるキー。CSVの行番号は書き出し直すとずれるので、記録の中身（日付・金額・カテゴリー・メモ）で見分ける。
+ * 中身がすべて同じ記録は区別しない（扱いを分ける理由が無い）。家計簿アプリで記録を書き換えると、キーも変わる
+ */
+export const recordKey = (tx: Transaction) => JSON.stringify([tx.date, tx.amount, tx.category, tx.memo])
+
+/** カテゴリー・メモ・期間・選んだ記録のどれか1つ以上を指定しているか（無ければ全件に当たるので無効扱い） */
+export const hasCriteria = (c: Condition) => c.category !== undefined || Boolean(c.memo || c.from || c.to || c.records?.length)
 
 export function matches(c: Condition, tx: Transaction): boolean {
   if (!hasCriteria(c) || txSide(tx) !== c.side) return false
+  if (c.records?.length && !c.records.includes(recordKey(tx))) return false
   if (c.category !== undefined && tx.category !== c.category) return false
   if (c.from && tx.date < c.from) return false
   if (c.to && tx.date > c.to) return false

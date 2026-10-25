@@ -10,6 +10,7 @@ import {
   outcomeOf,
   parseProcessingConfig,
   processedAmounts,
+  recordKey,
   UNASSIGNED_OFFSET,
   type Condition,
   type ProcessingConfig,
@@ -42,6 +43,17 @@ describe('conditions', () => {
     expect(matches({ side: 'expense', memo: '(', memoIsRegex: true }, super1)).toBe(false)
     expect(matches({ side: 'expense', category: '食費', from: '2026-02-01' }, super1)).toBe(false)
     expect(matches({ side: 'expense', category: '食費', to: '2026-01-05' }, super1)).toBe(true)
+  })
+
+  it('matches records picked by their contents, regardless of the CSV row', () => {
+    const picked: Condition = { side: 'expense', records: [recordKey(super1)] }
+    expect(matches(picked, super1)).toBe(true)
+    // 書き出し直して行がずれても（id が違っても）、中身が同じなら同じ記録
+    expect(matches(picked, { ...super1, id: '99' })).toBe(true)
+    expect(matches(picked, { ...super1, memo: 'スーパー（書き換え）' })).toBe(false)
+    expect(matches(picked, byMemo(txs, '携帯1月')!)).toBe(false)
+    expect(hasCriteria({ side: 'expense', records: [] })).toBe(false)
+    expect(parseProcessingConfig(config([{ when: picked }])).exclude.rules[0].when).toEqual(picked)
   })
 
   it('treats a condition with only a side as inactive', () => {

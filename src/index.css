@@ -242,6 +242,12 @@ button:disabled { opacity: 0.4; cursor: default; }
 .results-scroll table { display: table; width: 100%; }
 .results-memo { white-space: normal; }
 .condition-results button.pin { font-size: 0.8rem; padding: 1px 8px; white-space: nowrap; }
+.condition-results tbody tr { cursor: pointer; }
+.condition-results tbody tr:hover td { background: color-mix(in oklch, var(--accent) 5%, transparent); }
+.condition-results .picked-row td { background: color-mix(in oklch, var(--accent) 12%, transparent); }
+.condition-results .picked { margin-bottom: 10px; }
+.condition-results .picked .results-scroll { max-height: 25vh; }
+.condition-results p button.pin { margin-left: 8px; }
 .results-scroll thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
 .sort-button { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; }
 .sort-button:hover { color: var(--accent); }

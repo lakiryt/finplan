@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { hasCriteria, matches, opposite, UNASSIGNED_OFFSET, type Condition } from '../domain/processing'
+import { hasCriteria, matches, opposite, recordKey, UNASSIGNED_OFFSET, type Condition } from '../domain/processing'
 import { txSide, type Side } from '../domain/raw'
 import type { Transaction } from '../domain/types'
 import { yen } from './format'
@@ -41,6 +41,7 @@ interface Props {
 
 /**
  * 条件の編集画面（モーダル）。条件の下に、当たる記録をその場で一覧にして、確かめながら絞り込めるようにする。
+ * 一覧でチェックを付けると、その記録だけを選んだ条件になる（入力欄は記録を探すための検索として使う）。
  * ブラウザ標準の <dialog> を使う（Esc や背景のクリックで閉じる。保存するまでは設定に反映しない）
  */
 export function ConditionDialog({ initial, onClose, ...rest }: Props) {
@@ -72,29 +73,31 @@ function ConditionEditor({
   onDelete,
   close,
 }: Omit<Props, 'initial' | 'onClose'> & { initial: RuleDraft; close: () => void }) {
-  const [draft, setDraft] = useState<RuleDraft>(initial)
+  const { records: initialRecords, ...initialSearch } = initial.when
+  const [draft, setDraft] = useState<RuleDraft>({ ...initial, when: initialSearch })
+  // 一覧で選んだ記録（recordKey）。検索を変えても残る。1件でもあれば、保存する条件は選んだ記録だけになる
+  const [picked, setPicked] = useState<string[]>(initialRecords ?? [])
   // 一覧の並び順。見出しを押すとその列で並べ替え、同じ見出しをもう一度押すと昇順・降順を入れ替える
   const [sort, setSort] = useState<Sort>({ key: 'date', desc: true })
   const c = draft.when
   const setWhen = (patch: Partial<Condition>) => setDraft({ ...draft, when: { ...c, ...patch } })
   const column = COLUMNS.find((col) => col.key === sort.key)!
-  const hit = hasCriteria(c)
-    ? transactions.filter((t) => matches(c, t)).sort((a, b) => (sort.desc ? -1 : 1) * column.compare(a, b) || b.date.localeCompare(a.date))
-    : []
+  const sorted = (list: Transaction[]) => list.sort((a, b) => (sort.desc ? -1 : 1) * column.compare(a, b) || b.date.localeCompare(a.date))
   const toggleSort = (key: SortKey) =>
     // 日付・金額は新しい順・大きい順から、文字の列は五十音順から始める
     setSort((cur) => (cur.key === key ? { key, desc: !cur.desc } : { key, desc: key === 'date' || key === 'amount' }))
-  const total = hit.reduce((s, t) => s + Math.abs(t.amount), 0)
+  const hit = hasCriteria(c) ? sorted(transactions.filter((t) => matches(c, t))) : []
+  const pickedSet = new Set(picked)
+  const pickedRows = sorted(transactions.filter((t) => txSide(t) === c.side && pickedSet.has(recordKey(t))))
+  const found = new Set(pickedRows.map(recordKey))
+  const missing = picked.filter((k) => !found.has(k)).length
+  const toggle = (keys: string[], on: boolean) =>
+    setPicked((cur) => (on ? [...new Set([...cur, ...keys])] : cur.filter((k) => !keys.includes(k))))
+  const sum = (list: Transaction[]) => yen(list.reduce((s, t) => s + Math.abs(t.amount), 0))
   const other = opposite(c.side)
-
-  /**
-   * その記録だけに当たるよう条件を置き換える。日付とカテゴリーで足りるなら、それだけにする
-   * （同じ日・同じカテゴリーに同じ側の記録がほかにあるときだけ、メモも足す）
-   */
-  const pinTo = (t: Transaction) => {
-    const sameDay = transactions.filter((x) => txSide(x) === c.side && x.date === t.date && x.category === t.category).length
-    setWhen({ category: t.category, from: t.date, to: t.date, memo: sameDay > 1 && t.memo ? t.memo : undefined, memoIsRegex: undefined })
-  }
+  // 保存する条件。記録を選んでいれば、検索の条件は使わず選んだ記録だけにする
+  const result: Condition = picked.length > 0 ? { side: c.side, records: picked } : c
+  const table = { sort, toggleSort, picked: pickedSet, toggle }
 
   return (
     <div className="condition-editor">
@@ -103,7 +106,14 @@ function ConditionEditor({
         対象
         {(['income', 'expense'] as const).map((side) => (
           <label key={side}>
-            <input type="radio" checked={c.side === side} onChange={() => setDraft({ ...draft, when: { side }, target: kind === 'offset' ? '' : undefined })} />
+            <input
+              type="radio"
+              checked={c.side === side}
+              onChange={() => {
+                setDraft({ ...draft, when: { side }, target: kind === 'offset' ? '' : undefined })
+                setPicked([])
+              }}
+            />
             {SIDE_LABEL[side]}
           </label>
         ))}
@@ -154,9 +164,9 @@ function ConditionEditor({
 
       <div className="editor-row">
         <button
-          disabled={!hasCriteria(c)}
+          disabled={!hasCriteria(result)}
           onClick={() => {
-            onSave(draft)
+            onSave({ ...draft, when: result })
             close()
           }}
         >
@@ -182,48 +192,91 @@ function ConditionEditor({
       </div>
 
       <div className="condition-results">
-        <p className="muted small">
-          {hasCriteria(c)
-            ? `当たる記録: 全期間で${hit.length}件・${yen(total)}`
-            : 'カテゴリー・メモ・期間のどれかを指定すると、当たる記録がここに並びます（何も指定しないと全件に当たってしまうため）'}
-          {kind === 'offset' && !draft.target && hasCriteria(c) ? `（${UNASSIGNED_OFFSET}として数えます）` : ''}
-        </p>
-        {hit.length > 0 && (
-          <div className="results-scroll">
-            <table>
-              <thead>
-                <tr>
-                  {COLUMNS.map((col) => (
-                    <th key={col.key} className={col.num ? 'num' : undefined} aria-sort={sort.key === col.key ? (sort.desc ? 'descending' : 'ascending') : 'none'}>
-                      <button className="sort-button" onClick={() => toggleSort(col.key)}>
-                        {col.label}
-                        <span className="sort-mark">{sort.key === col.key ? (sort.desc ? '▼' : '▲') : ''}</span>
-                      </button>
-                    </th>
-                  ))}
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {hit.slice(0, RESULT_LIMIT).map((t) => (
-                  <tr key={t.id}>
-                    <td className="num">{t.date}</td>
-                    <td className="num">{yen(t.amount)}</td>
-                    <td>{t.category || '（空欄）'}</td>
-                    <td className="results-memo">{t.memo}</td>
-                    <td>
-                      <button className="pin" onClick={() => pinTo(t)} title="条件を、この記録の日付とカテゴリー（必要ならメモも）に置き換えます">
-                        この記録に絞る
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {hit.length > RESULT_LIMIT && <p className="muted small">ほか {hit.length - RESULT_LIMIT}件（条件を絞ると表示されます）</p>}
+        {picked.length > 0 && (
+          <div className="picked">
+            <p className="small">
+              <strong>
+                選んだ記録: {pickedRows.length}件・{sum(pickedRows)}
+              </strong>
+              <span className="muted">（保存すると、この記録だけが対象になります）</span>
+              <button className="pin" onClick={() => setPicked([])}>
+                選択を解除
+              </button>
+            </p>
+            {missing > 0 && (
+              <p className="small">
+                <span className="warn-text">見つからない記録が{missing}件あります（家計簿で書き換えたか、読み込んだCSVに無い記録）</span>
+                <button className="pin" onClick={() => setPicked(picked.filter((k) => found.has(k)))}>
+                  外す
+                </button>
+              </p>
+            )}
+            {pickedRows.length > 0 && <RecordTable rows={pickedRows} {...table} />}
           </div>
         )}
+        <p className="muted small">
+          {hasCriteria(c)
+            ? `${picked.length > 0 ? '検索に' : ''}当たる記録: 全期間で${hit.length}件・${sum(hit)}（チェックを付けると、その記録だけを選べます）`
+            : picked.length > 0
+              ? 'カテゴリー・メモ・期間で検索すると、ほかの記録も選べます'
+              : 'カテゴリー・メモ・期間のどれかを指定すると、当たる記録がここに並びます（何も指定しないと全件に当たってしまうため）'}
+          {kind === 'offset' && !draft.target && hasCriteria(result) ? `（${UNASSIGNED_OFFSET}として数えます）` : ''}
+        </p>
+        {hit.length > 0 && (
+          <>
+            <RecordTable rows={hit.slice(0, RESULT_LIMIT)} {...table} />
+            {hit.length > RESULT_LIMIT && <p className="muted small">ほか {hit.length - RESULT_LIMIT}件（条件を絞ると表示されます）</p>}
+          </>
+        )}
       </div>
+    </div>
+  )
+}
+
+interface TableProps {
+  rows: Transaction[]
+  sort: Sort
+  toggleSort: (key: SortKey) => void
+  picked: Set<string>
+  toggle: (keys: string[], on: boolean) => void
+}
+
+/** 記録の一覧。行を押すと選ぶ・外す（見出しのチェックは、一覧にある記録をまとめて選ぶ・外す） */
+function RecordTable({ rows, sort, toggleSort, picked, toggle }: TableProps) {
+  const keys = rows.map(recordKey)
+  const all = keys.every((k) => picked.has(k))
+  return (
+    <div className="results-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>
+              <input type="checkbox" checked={all} onChange={() => toggle(keys, !all)} title={all ? '一覧の記録をすべて外す' : '一覧の記録をすべて選ぶ'} />
+            </th>
+            {COLUMNS.map((col) => (
+              <th key={col.key} className={col.num ? 'num' : undefined} aria-sort={sort.key === col.key ? (sort.desc ? 'descending' : 'ascending') : 'none'}>
+                <button className="sort-button" onClick={() => toggleSort(col.key)}>
+                  {col.label}
+                  <span className="sort-mark">{sort.key === col.key ? (sort.desc ? '▼' : '▲') : ''}</span>
+                </button>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((t, i) => (
+            <tr key={t.id} className={picked.has(keys[i]) ? 'picked-row' : undefined} onClick={() => toggle([keys[i]], !picked.has(keys[i]))}>
+              <td>
+                <input type="checkbox" checked={picked.has(keys[i])} readOnly />
+              </td>
+              <td className="num">{t.date}</td>
+              <td className="num">{yen(t.amount)}</td>
+              <td>{t.category || '（空欄）'}</td>
+              <td className="results-memo">{t.memo}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
