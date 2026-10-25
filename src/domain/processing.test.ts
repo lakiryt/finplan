@@ -6,6 +6,7 @@ import {
   activeRules,
   hasCriteria,
   isProcessed,
+  whollyExcluded,
   matches,
   outcomeOf,
   parseProcessingConfig,
@@ -118,6 +119,13 @@ describe('offset', () => {
 })
 
 describe('summaries and parsing', () => {
+  it('lists categories excluded as a whole (offsetting into them would equal excluding)', () => {
+    const c = config([{ when: { side: 'expense', category: '貯蓄' } }, { when: { side: 'expense', category: '家賃', memo: '泊' } }])
+    expect([...whollyExcluded(c, 'expense')]).toEqual(['貯蓄'])
+    expect([...whollyExcluded(c, 'income')]).toEqual([])
+    expect([...whollyExcluded({ ...c, enabled: { ...c.enabled, expense: { offset: true, exclude: false } } }, 'expense')]).toEqual([])
+  })
+
   it('reports processed amounts per category and side', () => {
     const c = config([{ when: { side: 'expense', category: '家賃', memo: '泊' } }], [{ when: { side: 'income', category: '回収' }, target: '食費' }])
     const amounts = processedAmounts(txs, c)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { hasCriteria, matches, opposite, outcomeOf, recordKey, type Condition, type ProcessingConfig } from '../domain/processing'
+import { hasCriteria, matches, opposite, outcomeOf, recordKey, whollyExcluded, type Condition, type ProcessingConfig } from '../domain/processing'
 import { txSide, type Side } from '../domain/raw'
 import type { Transaction } from '../domain/types'
 import { yen } from './format'
@@ -99,6 +99,7 @@ function RecordEditor({
   const other = opposite(c.side)
   // 保存する条件。記録を選んでいれば、検索の項目は使わず選んだ記録だけにする
   const result: Condition = picked.length > 0 ? { side: c.side, records: picked } : c
+  const excluded = whollyExcluded(processing, other)
   const outcomes = useMemo(() => new Map(transactions.map((t) => [t, outcomeOf(t, processing)])), [transactions, processing])
   const table = { sort, toggleSort, picked: pickedSet, toggle, outcomes }
 
@@ -154,6 +155,16 @@ function RecordEditor({
       </div>
 
       <div className="record-results">
+        <p className="muted small">
+          {hasCriteria(c) ? '検索に当たる記録' : `${SIDE_LABEL[c.side]}の記録すべて`}: 全期間で{hit.length}件・{sum(hit)}
+        </p>
+        {hit.length > 0 && (
+          <>
+            <RecordTable rows={hit.slice(0, RESULT_LIMIT)} {...table} />
+            {hit.length > RESULT_LIMIT && <p className="muted small">ほか {hit.length - RESULT_LIMIT}件（検索で絞ると表示されます）</p>}
+          </>
+        )}
+        {/* 選ぶたびに上の検索結果の行が動かないように、選んだ記録は下に出す */}
         {picked.length > 0 && (
           <div className="picked">
             <p className="small">
@@ -176,15 +187,6 @@ function RecordEditor({
             {pickedRows.length > 0 && <RecordTable rows={pickedRows} {...table} />}
           </div>
         )}
-        <p className="muted small">
-          {hasCriteria(c) ? '検索に当たる記録' : `${SIDE_LABEL[c.side]}の記録すべて`}: 全期間で{hit.length}件・{sum(hit)}
-        </p>
-        {hit.length > 0 && (
-          <>
-            <RecordTable rows={hit.slice(0, RESULT_LIMIT)} {...table} />
-            {hit.length > RESULT_LIMIT && <p className="muted small">ほか {hit.length - RESULT_LIMIT}件（検索で絞ると表示されます）</p>}
-          </>
-        )}
       </div>
 
       <div className="record-footer">
@@ -196,8 +198,9 @@ function RecordEditor({
           >
             <option value={NO_TARGET}>差し引かない（除外）</option>
             {categories[other].map((cat) => (
-              <option key={cat} value={targetValue(cat)}>
-                「{cat || '（空欄）'}」から差し引く（相殺）
+              // カテゴリー全体を除外している先へ差し引くと、除外と同じになるので選べない
+              <option key={cat} value={targetValue(cat)} disabled={excluded.has(cat)}>
+                「{cat || '（空欄）'}」{excluded.has(cat) ? '（除外しているので選べません）' : 'から差し引く（相殺）'}
               </option>
             ))}
           </select>

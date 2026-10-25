@@ -149,6 +149,16 @@ export function applyProcessing(txs: Transaction[], config: ProcessingConfig): T
   })
 }
 
+/**
+ * その側で、カテゴリー全体を除外しているカテゴリー（カテゴリーだけを指定した除外の条件）。
+ * ここへ差し引く相殺は、相殺した分も一緒に除かれ、その記録を除外するのと同じになるので、差し引く先に選べないようにする。
+ * メモや期間で一部だけを除外しているカテゴリーは、差し引いた記録が残ることがあるので含めない
+ */
+export function whollyExcluded(config: ProcessingConfig, side: Side): Set<string> {
+  const only = (c: Condition) => c.category !== undefined && !c.memo && !c.from && !c.to && !c.records?.length
+  return new Set(activeRules(config, 'exclude').flatMap((r) => (r.when.side === side && only(r.when) ? [r.when.category!] : [])))
+}
+
 /** 2. の収入側・支出側に、何かしらの加工がかかっているか（見出しを「加工後」にするため）。相殺は両側に効く */
 export function isProcessed(config: ProcessingConfig, side: Side): boolean {
   return activeRules(config).some((r) => r.when.side === side || kindOf(r) === 'offset')
