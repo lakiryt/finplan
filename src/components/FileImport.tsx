@@ -4,14 +4,20 @@ import type { Transaction } from '../domain/types'
 
 interface Props {
   onLoad: (transactions: Transaction[]) => void
+  /** ボタンの文言 */
+  label?: string
+  /** 目立たせるボタンにするか（最初の画面用） */
+  primary?: boolean
 }
 
-export function FileImport({ onLoad }: Props) {
+/** CSVを選んで読み込むボタン。読み込めなかったときは、その理由をボタンの横に出す */
+export function FileImport({ onLoad, label = 'CSVを読み込む', primary }: Props) {
   const [message, setMessage] = useState<string>()
 
   async function handleFile(file: File) {
     try {
       const result = parseCsv(await file.text())
+      if (!result.transactions.length) throw new Error('記録を1件も読み込めませんでした。対応している形式のCSVか確かめてください。')
       onLoad(result.transactions)
       const skipped = result.errors.length ? `（${result.errors.length}行は読み込めませんでした）` : ''
       setMessage(`${result.transactions.length}件を読み込みました${skipped}`)
@@ -22,9 +28,9 @@ export function FileImport({ onLoad }: Props) {
   }
 
   return (
-    <div className="file-import">
-      <label className="button">
-        CSVを選ぶ
+    <span className="file-import">
+      <label className={`button ${primary ? 'primary' : ''}`}>
+        {label}
         <input
           type="file"
           accept=".csv,text/csv"
@@ -36,8 +42,7 @@ export function FileImport({ onLoad }: Props) {
           }}
         />
       </label>
-      <span className="muted">ファイルはこのブラウザの中だけで処理され、どこにも送信されません。</span>
-      {message && <p>{message}</p>}
-    </div>
+      {message && <span className="small">{message}</span>}
+    </span>
   )
 }

@@ -8,8 +8,9 @@ interface Props {
   living: SeriesStats
 }
 
-/** 手取り − 生活費（家賃を除く） − 貯金目標 = 家賃に回せる額 */
-export function RentBudget({ living }: Props) {
+/** 手取り − 生活費 − 毎月の貯金 = これから決める支出（家賃・ローンなど）に回せる額 */
+export function Budget({ living }: Props) {
+  // 保存先の名前は、入力した値を残すため以前のまま
   const [takeHome, setTakeHome] = useStoredState('finplan.rent.takeHome', 200000)
   const [savings, setSavings] = useStoredState('finplan.rent.savings', 0)
   const [calculating, setCalculating] = useState(false)
@@ -44,7 +45,7 @@ export function RentBudget({ living }: Props) {
           <tr>
             <th>生活費の基準</th>
             <th className="num">生活費</th>
-            <th className="num">家賃に回せる額</th>
+            <th className="num">ほかに回せる額</th>
           </tr>
         </thead>
         <tbody>
