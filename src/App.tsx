@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { FileImport } from './components/FileImport'
 import { ProcessingCards } from './components/ProcessingCards'
+import { RecordDialog } from './components/RecordDialog'
 import { RentBudget } from './components/RentBudget'
 import { RawOverview } from './components/RawOverview'
+import type { RecordsRequest, RuleDraft } from './components/ruleText'
 import { initialProcessing } from './config/initial'
 import { filterByMonths, monthOf, monthRange } from './domain/aggregate'
 import { applyProcessing, parseProcessingConfig, type ProcessingConfig } from './domain/processing'
-import { rawMonthlyRows } from './domain/raw'
+import { categoryTotals, rankByTotal, rawMonthlyRows, type Side } from './domain/raw'
 import { seriesStats } from './domain/stats'
 import type { Transaction } from './domain/types'
 import { removeStored, useStoredState } from './state/storage'
@@ -28,6 +30,12 @@ function defaultPeriod(txs: Transaction[]) {
   return { from: range[0], to: range[range.length - 1], available: months }
 }
 
+/** その月の初日と末日（YYYY-MM-DD） */
+function monthDays(month: string) {
+  const [y, m] = month.split('-').map(Number)
+  return { from: `${month}-01`, to: `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}` }
+}
+
 export default function App() {
   const [transactions, setTransactions] = useStoredState<Transaction[]>(TX_KEY, [])
   const [processing, setProcessing] = useStoredState<ProcessingConfig>('finplan.processing', initialProcessing, parseProcessingConfig)
@@ -35,6 +43,21 @@ export default function App() {
   const [period, setPeriod] = useState<{ from: string; to: string } | null>(null)
   const from = period?.from ?? initial?.from ?? ''
   const to = period?.to ?? initial?.to ?? ''
+  // 記録の画面（2. の棒グラフや 3. の条件から開く）
+  const [records, setRecords] = useState<RecordsRequest | null>(null)
+  const categories = useMemo<Record<Side, string[]>>(
+    () => ({ income: rankByTotal(categoryTotals(transactions, 'income')), expense: rankByTotal(categoryTotals(transactions, 'expense')) }),
+    [transactions],
+  )
+  // グラフは描き直しが重いので、渡す関数は作り直さない
+  const showMonth = useCallback(
+    (side: Side, month: string) => setRecords({ draft: { enabled: true, when: { side, ...monthDays(month) }, target: null } }),
+    [],
+  )
+  const saveRule = (d: RuleDraft, id?: string) => {
+    const rule = { id: id ?? crypto.randomUUID(), enabled: d.enabled, when: d.when, target: d.target }
+    setProcessing({ ...processing, rules: id ? processing.rules.map((r) => (r.id === id ? rule : r)) : [...processing.rules, rule] })
+  }
 
   // 家賃の目安に使う生活費は、2. と同じ加工後の支出
   const livingStats = useMemo(() => {
@@ -97,16 +120,16 @@ export default function App() {
         <>
           <section>
             <h2>2. 支出と収入</h2>
-            <RawOverview transactions={transactions} processing={processing} from={from} to={to} />
+            <RawOverview transactions={transactions} processing={processing} from={from} to={to} onShowMonth={showMonth} />
           </section>
 
           <section>
             <h2>3. 加工</h2>
             <div className="row">
-              <span className="muted small">工程ごとに条件を足していくと、2. と 4. に反映されます。</span>
+              <span className="muted small">条件を足していくと、2. と 4. に反映されます。2. の棒グラフを押して、その月の記録から条件を作ることもできます。</span>
               <button onClick={() => confirm('加工の設定を初期状態に戻しますか？') && setProcessing(initialProcessing)}>加工の設定を初期に戻す</button>
             </div>
-            <ProcessingCards config={processing} onChange={setProcessing} transactions={transactions} />
+            <ProcessingCards config={processing} onChange={setProcessing} onOpen={setRecords} />
           </section>
 
           <section>
@@ -114,6 +137,16 @@ export default function App() {
             <p className="muted small">生活費は、2. の支出（3. の加工後）です。家賃を除いた生活費にするには、3. の相殺で家賃を収入から差し引きます。</p>
             <RentBudget living={livingStats} />
           </section>
+
+          <RecordDialog
+            request={records}
+            categories={categories}
+            transactions={transactions}
+            processing={processing}
+            onSave={saveRule}
+            onDelete={(id) => setProcessing({ ...processing, rules: processing.rules.filter((r) => r.id !== id) })}
+            onClose={() => setRecords(null)}
+          />
         </>
       )}
     </main>

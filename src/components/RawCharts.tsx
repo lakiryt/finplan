@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, type TooltipContentProps } from 'recharts'
+import type { Side } from '../domain/raw'
 import { ExpensePie } from './ExpensePie'
 import { man, yen } from './format'
 import type { useChartTheme } from './palette'
@@ -41,6 +42,10 @@ interface Props {
   mean: number
   median: number
   theme: Theme
+  /** 支出・収入のどちらの棒か（詳細から記録を開くときに使う） */
+  side: Side
+  /** 棒の詳細から、その月の記録を開く */
+  onShowMonth: (side: Side, month: string) => void
 }
 
 /**
@@ -48,7 +53,7 @@ interface Props {
  * - 支出・収入: カテゴリー別の円グラフと、月ごとの積み上げ棒グラフ
  * - 収支: 月ごとの収支と、累積収支の棒グラフ（黒字は青、赤字は赤）
  */
-export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, bars, mean, median, theme }: Props) {
+export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, bars, mean, median, theme, side, onShowMonth }: Props) {
   const averages = <AverageLines mean={mean} median={median} theme={theme} />
 
   if (bars.kind === 'balance') {
@@ -57,7 +62,7 @@ export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, b
     const last = bars.data[bars.data.length - 1]
     return (
       <div className="charts balance">
-        <MonthBarChart title={barTitle} data={bars.data} detail={BalanceDetail} theme={theme}>
+        <MonthBarChart title={barTitle} data={bars.data} detail={(p) => <BalanceDetail {...p} onShow={onShowMonth} />} theme={theme}>
           <Bar dataKey="balance" name="収支" maxBarSize={28} isAnimationActive={false}>
             {bars.data.map((d) => (
               <Cell key={d.month} fill={signColor(d.balance)} />
@@ -93,7 +98,7 @@ export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, b
           surface={theme.surface}
         />
       </div>
-      <MonthBarChart title={barTitle} data={bars.data} detail={MonthDetail} theme={theme}>
+      <MonthBarChart title={barTitle} data={bars.data} detail={(p) => <MonthDetail {...p} onShow={(month) => onShowMonth(side, month)} />} theme={theme}>
         {series.map((s, i) => (
           <Bar
             key={s.key}
@@ -164,7 +169,8 @@ function MonthBarChart({
           <CartesianGrid vertical={false} stroke={theme.grid} />
           <XAxis dataKey="month" stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} />
           <YAxis tickFormatter={man} stroke={theme.axis} tick={{ fill: theme.muted, fontSize: 12 }} tickLine={false} axisLine={false} width={48} />
-          <Tooltip trigger="click" active={selected !== null} content={detail} cursor={{ fill: theme.grid, opacity: 0.5 }} />
+          {/* 詳細の中のボタンを押せるように、ツールチップでもマウスの操作を受け取る */}
+          <Tooltip trigger="click" active={selected !== null} content={detail} cursor={{ fill: theme.grid, opacity: 0.5 }} wrapperStyle={{ pointerEvents: 'auto' }} />
           {children}
         </BarChart>
       </ResponsiveContainer>
@@ -197,7 +203,7 @@ function AverageLines({ mean, median, theme }: { mean: number; median: number; t
  * 相殺で差し引いた分（マイナス）も出すので、内訳の合計と月の合計が一致する。
  * 棒は表の順に下から積んでいるので、Recharts から渡る順（描いた順）がそのまま表の順になる
  */
-function MonthDetail({ active, payload, label }: TooltipContentProps) {
+function MonthDetail({ active, payload, label, onShow }: TooltipContentProps & { onShow: (month: string) => void }) {
   if (!active || !payload?.length) return null
   const total = Number(payload[0].payload.total ?? 0)
   return (
@@ -208,12 +214,13 @@ function MonthDetail({ active, payload, label }: TooltipContentProps) {
         .map((p) => (
           <DetailRow key={String(p.dataKey)} color={p.color} name={String(p.name)} value={Number(p.value)} />
         ))}
+      <ShowRecords onClick={() => onShow(String(label))}>この月の記録を見る</ShowRecords>
     </div>
   )
 }
 
 /** 収支の棒を押したときの詳細。収支と、その元の収入・支出 */
-function BalanceDetail({ active, payload, label }: TooltipContentProps) {
+function BalanceDetail({ active, payload, label, onShow }: TooltipContentProps & { onShow: (side: Side, month: string) => void }) {
   if (!active || !payload?.length) return null
   const d = payload[0].payload as BalanceMonth
   return (
@@ -221,7 +228,26 @@ function BalanceDetail({ active, payload, label }: TooltipContentProps) {
       <DetailHead label={label} value={d.balance} />
       <DetailRow name="収入" value={d.income} />
       <DetailRow name="支出" value={d.expense} />
+      <div className="chart-detail-actions">
+        <ShowRecords onClick={() => onShow('income', String(label))}>収入の記録</ShowRecords>
+        <ShowRecords onClick={() => onShow('expense', String(label))}>支出の記録</ShowRecords>
+      </div>
     </div>
+  )
+}
+
+/** 詳細から記録の画面を開くボタン。押してもグラフの選択（詳細の開閉）は変えない */
+function ShowRecords({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      className="chart-detail-link"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+    >
+      {children}
+    </button>
   )
 }
 

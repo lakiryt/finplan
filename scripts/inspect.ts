@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { filterByMonths, monthOf } from '../src/domain/aggregate'
 import { parseCsv } from '../src/domain/importers'
-import { applyProcessing, defaultProcessing, hasCriteria, matches, outcomeOf, parseProcessingConfig } from '../src/domain/processing'
+import { applyProcessing, defaultProcessing, hasCriteria, kindOf, matches, outcomeOf, parseProcessingConfig } from '../src/domain/processing'
 import { rawCategoryStats, rawMonthlyRows } from '../src/domain/raw'
 import { seriesStats } from '../src/domain/stats'
 
@@ -68,13 +68,9 @@ console.log('\n## 支出のカテゴリー別 月平均')
 for (const s of rawCategoryStats(processed, rows, 'expense')) console.log([s.category, fmt(s.monthlyMean), `${s.count}件`].join('\t'))
 
 console.log('\n## 条件ごとの当たる件数（期間内）')
-for (const [step, rules] of [
-  ['除外', config.exclude.rules],
-  ['相殺', config.offset.rules],
-] as const) {
-  for (const r of rules) {
-    const hit = hasCriteria(r.when) ? inPeriod.filter((t) => matches(r.when, t)) : []
-    const total = hit.reduce((s, t) => s + Math.abs(t.amount), 0)
-    console.log([step, r.enabled ? 'on ' : 'off', `${hit.length}件`, fmt(total), JSON.stringify(r.when), 'target' in r ? `→ ${r.target || '指定なし'}` : ''].join('\t'))
-  }
+for (const r of config.rules) {
+  const hit = hasCriteria(r.when) ? inPeriod.filter((t) => matches(r.when, t)) : []
+  const total = hit.reduce((s, t) => s + Math.abs(t.amount), 0)
+  const on = r.enabled && config.enabled[r.when.side][kindOf(r)]
+  console.log([kindOf(r) === 'offset' ? '相殺' : '除外', on ? 'on ' : 'off', `${hit.length}件`, fmt(total), JSON.stringify(r.when), r.target === null ? '' : `→ ${r.target}`].join('\t'))
 }

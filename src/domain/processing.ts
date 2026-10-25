@@ -3,7 +3,8 @@ import { txSide, type Side } from './raw'
 import type { Transaction } from './types'
 
 /*
- * 加工の設定。3. の工程（除外・相殺）ごとに条件を並べ、有効なものを 2. の集計の前に当てはめる。
+ * 加工の設定。条件を並べ、有効なものを 2. の集計の前に当てはめる。
+ * 条件に当たる記録はその側から除き、反対側のカテゴリーを選べばそこからも同じ額を差し引く（相殺）。選ばなければ除くだけ（除外）。
  * 考え方は docs/real-income-expense.md と docs/offset-and-living-cost.md を参照。
  */
 
@@ -25,37 +26,29 @@ export interface Condition {
   records?: string[]
 }
 
-/** 除外: 条件に当たる記録を、その側から除く */
-export interface ExcludeRule {
-  id: string
-  enabled: boolean
-  when: Condition
-}
-
 /**
- * 相殺: 条件に当たる記録をその側から除き、反対側からも同じ額を差し引く（収支は変わらない）。
- * target は差し引く反対側のカテゴリー。空なら、どのカテゴリーにも付けずに全体から差し引く（UNASSIGNED_OFFSET）
+ * 加工の条件。条件に当たる記録を、その側から除く。
+ * target は、同じ額を差し引く反対側のカテゴリー（相殺。収支は変わらない）。null なら差し引かない（除外）
  */
-export interface OffsetRule {
+export interface Rule {
   id: string
   enabled: boolean
   when: Condition
-  target: string
+  target: string | null
 }
 
-export interface Step<R> {
-  enabled: boolean
-  rules: R[]
-}
+/** 相殺（反対側からも差し引く）か、除外（その側から除くだけ）か */
+export type Kind = 'offset' | 'exclude'
+export const KINDS: Kind[] = ['offset', 'exclude']
+export const kindOf = (rule: { target: string | null }): Kind => (rule.target === null ? 'exclude' : 'offset')
 
 export interface ProcessingConfig {
-  version: 2
-  exclude: Step<ExcludeRule>
-  offset: Step<OffsetRule>
+  version: 3
+  /** 並び順が優先順（ただし相殺は除外より優先） */
+  rules: Rule[]
+  /** 側 × 相殺・除外の区分ごとに、まとめて有効・無効を切り替える */
+  enabled: Record<Side, Record<Kind, boolean>>
 }
-
-/** 差し引く先を指定しない相殺を数えるカテゴリー名（どのカテゴリーにも属さない差し引き） */
-export const UNASSIGNED_OFFSET = '差し引き（指定なし）'
 
 export const opposite = (side: Side): Side => (side === 'income' ? 'expense' : 'income')
 
@@ -77,25 +70,19 @@ function parseCondition(raw: unknown): Condition {
   return cond
 }
 
-function parseStep<R>(raw: unknown, parseRule: (r: Record<string, unknown>) => R): Step<R> {
-  const s = raw as { enabled?: unknown; rules?: unknown } | null
-  if (!s || !Array.isArray(s.rules)) throw new Error('工程の形式が正しくありません')
-  return { enabled: Boolean(s.enabled), rules: (s.rules as Record<string, unknown>[]).map(parseRule) }
+function parseRule(raw: unknown): Rule {
+  const r = raw as Record<string, unknown> | null
+  if (!r) throw new Error('条件の形式が正しくありません')
+  // 空欄のカテゴリー（''）にも差し引ける
+  return { id: String(r.id), enabled: Boolean(r.enabled), when: parseCondition(r.when), target: typeof r.target === 'string' ? r.target : null }
 }
 
 export function parseProcessingConfig(raw: unknown): ProcessingConfig {
   const c = raw as Record<string, unknown> | null
-  if (!c || c.version !== 2) throw new Error('加工の設定の形式が正しくありません')
-  return {
-    version: 2,
-    exclude: parseStep(c.exclude, (r) => ({ id: String(r.id), enabled: Boolean(r.enabled), when: parseCondition(r.when) })),
-    offset: parseStep(c.offset, (r) => ({
-      id: String(r.id),
-      enabled: Boolean(r.enabled),
-      when: parseCondition(r.when),
-      target: typeof r.target === 'string' ? r.target : '',
-    })),
-  }
+  if (!c || c.version !== 3 || !Array.isArray(c.rules)) throw new Error('加工の設定の形式が正しくありません')
+  const enabled = (c.enabled ?? {}) as Partial<Record<Side, Partial<Record<Kind, unknown>>>>
+  const sideEnabled = (side: Side) => ({ offset: enabled[side]?.offset !== false, exclude: enabled[side]?.exclude !== false })
+  return { version: 3, rules: c.rules.map(parseRule), enabled: { income: sideEnabled('income'), expense: sideEnabled('expense') } }
 }
 
 /** 初期設定。中身は src/config/default-processing.json で編集する */
@@ -129,43 +116,42 @@ export function matches(c: Condition, tx: Transaction): boolean {
   return true
 }
 
-const activeRules = <R extends { enabled: boolean; when: Condition }>(step: Step<R>) =>
-  step.enabled ? step.rules.filter((r) => r.enabled && hasCriteria(r.when)) : []
+/** 当てはめる条件（条件そのものと、その区分が有効なもの）。kind を指定すると、その種類だけ */
+export const activeRules = (config: ProcessingConfig, kind?: Kind) =>
+  config.rules.filter((r) => r.enabled && hasCriteria(r.when) && config.enabled[r.when.side][kindOf(r)] && (!kind || kindOf(r) === kind))
 
 /** 記録に何が起きるか。相殺は除外より優先（相殺は「除外＋反対側からも差し引く」なので） */
-export type Outcome = { kind: 'keep' } | { kind: 'exclude'; rule: ExcludeRule } | { kind: 'offset'; rule: OffsetRule; moved: Transaction | null }
+export type Outcome = { kind: 'keep' } | { kind: 'exclude'; rule: Rule } | { kind: 'offset'; rule: Rule; target: string; moved: Transaction | null }
 
 export function outcomeOf(tx: Transaction, config: ProcessingConfig): Outcome {
   const side = txSide(tx)
   if (!side) return { kind: 'keep' }
-  const offset = activeRules(config.offset).find((r) => matches(r.when, tx))
+  const offset = activeRules(config, 'offset').find((r) => matches(r.when, tx))
   if (offset) {
+    const target = offset.target ?? ''
     // 反対側の差し引きとして数え直す（side を反対側にし、金額の符号はそのまま）。
     // 収入側の記録（プラス）を支出側にすると支出が減り、支出側の記録（マイナス）を収入側にすると収入が減る
-    const moved: Transaction = { ...tx, category: offset.target || UNASSIGNED_OFFSET, side: opposite(side) }
+    const moved: Transaction = { ...tx, category: target, side: opposite(side) }
     // 差し引いた先が除外の条件に当たるなら、一緒に除く
-    const dropped = activeRules(config.exclude).some((r) => matches(r.when, moved))
-    return { kind: 'offset', rule: offset, moved: dropped ? null : moved }
+    const dropped = activeRules(config, 'exclude').some((r) => matches(r.when, moved))
+    return { kind: 'offset', rule: offset, target, moved: dropped ? null : moved }
   }
-  const exclude = activeRules(config.exclude).find((r) => matches(r.when, tx))
+  const exclude = activeRules(config, 'exclude').find((r) => matches(r.when, tx))
   return exclude ? { kind: 'exclude', rule: exclude } : { kind: 'keep' }
 }
 
 /** 有効な条件を当てはめた取引を返す */
 export function applyProcessing(txs: Transaction[], config: ProcessingConfig): Transaction[] {
-  if (!activeRules(config.exclude).length && !activeRules(config.offset).length) return txs
+  if (!activeRules(config).length) return txs
   return txs.flatMap((t) => {
     const o = outcomeOf(t, config)
     return o.kind === 'keep' ? [t] : o.kind === 'offset' && o.moved ? [o.moved] : []
   })
 }
 
-/** 工程に有効な条件があるか */
-export const isStepActive = (step: Step<{ enabled: boolean; when: Condition }>) => activeRules(step).length > 0
-
 /** 2. の収入側・支出側に、何かしらの加工がかかっているか（見出しを「加工後」にするため）。相殺は両側に効く */
 export function isProcessed(config: ProcessingConfig, side: Side): boolean {
-  return activeRules(config.exclude).some((r) => r.when.side === side) || activeRules(config.offset).length > 0
+  return activeRules(config).some((r) => r.when.side === side || kindOf(r) === 'offset')
 }
 
 /** 収入側・支出側のカテゴリーごとに、除外・相殺した金額（表の注記に使う。金額はプラス） */

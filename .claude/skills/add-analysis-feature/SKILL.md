@@ -17,8 +17,9 @@ finplan では「このカテゴリーはこう扱う」をコードに書かな
 | | `category` | カテゴリー（指定しなければ問わない。空欄のカテゴリーも指定できる） |
 | | `memo` / `memoIsRegex` | メモに含む文字（正規表現も可） |
 | | `from` / `to` | 日付の範囲（YYYY-MM-DD、両端を含む） |
-| 工程 | `exclude` | 条件に当たる記録を、その側から除く |
-| | `offset` | 条件に当たる記録をその側から除き、反対側のカテゴリー `target`（空なら全体）からも差し引く |
+| | `records` | 一覧から選んだ記録（`recordKey`: 日付・金額・カテゴリー・メモ） |
+| 条件 `Rule` | `target: null` | 除外。条件に当たる記録を、その側から除く |
+| | `target: カテゴリー` | 相殺。条件に当たる記録をその側から除き、反対側のそのカテゴリーからも差し引く |
 
 足りるなら、コードは変えずに `src/config/local/default-processing.json`（個人の設定、Gitの管理対象外）に条件を足す（または画面の「＋ 条件を追加」で足すよう利用者に提案する）。
 `src/config/default-processing.json` はコミットされるので、利用者のカテゴリー名やメモに基づく条件は書かない。
@@ -31,12 +32,12 @@ finplan では「このカテゴリーはこう扱う」をコードに書かな
 
 手順:
 
-1. **型**: 条件の項目なら `Condition` に、新しい工程なら `ProcessingConfig` に工程（`Step<新しいルール>`）を足す。JSDoc で意味を書く。
+1. **型**: 条件の項目なら `Condition` に、新しい工程なら `Rule` か `ProcessingConfig` に足す。JSDoc で意味を書く。
 2. **判定・適用**: `src/domain/processing.ts`
    - 条件の項目なら `matches` と `hasCriteria` に足す。
    - 工程なら `outcomeOf`（記録ごとに何が起きるか）と `applyProcessing` に足す。取引を増やす・動かす工程（按分など）は、`applyProcessing` の戻り値を展開する形にし、集計側（`raw.ts`）は変えずに済むようにする。
    - ほかの工程との優先順位（今は相殺が除外より優先）を決めて、コメントに書く。
-3. **画面**: 条件の項目なら `src/components/ConditionEditor.tsx` と `ruleText.ts`（バッジの説明）に、工程なら `src/components/ProcessingCards.tsx` に工程のカードを足す。カードの ⓘ は `ProcessingInfo.tsx` に短く書き、詳しい説明は `docs/` に置く。
+3. **画面**: 条件の項目なら `src/components/RecordDialog.tsx`（記録の画面）と `ruleText.ts`（バッジの説明）に、工程なら `src/components/ProcessingCards.tsx` に区分を足す。ⓘ は `ProcessingInfo.tsx` に短く書き、詳しい説明は `docs/` に置く。
 4. **テスト**: `src/domain/processing.test.ts` に、架空のカテゴリー名のデータ（共通のものは `testData.ts`）でテストを足す。期間の境界、無効な条件、ほかの工程との重なり、収支が変わるか変わらないかを確かめる。
 5. **設定の互換性**: 今はまだ後方互換を考えない段階なので、移行処理は書かない。形を変えたら `src/config/default-*.json` と `src/config/local/default-*.json` を新しい形に直す。
 6. **ドキュメント**: `CLAUDE.md` の「条件の意味」と、このスキルの表を更新する。考え方に新しい気付きがあれば `docs/principles.md` に1〜2行で足し、詳しくは `docs/` の該当箇所に書く。

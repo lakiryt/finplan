@@ -165,6 +165,9 @@ button:disabled { opacity: 0.4; cursor: default; }
 .chart-detail-head { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
 .chart-detail-row { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; }
 .chart-detail-swatch { width: 10px; height: 10px; border-radius: 2px; }
+.chart-detail-link { display: block; width: 100%; margin-top: 6px; font-size: 0.8rem; padding: 2px 8px; }
+.chart-detail-actions { display: flex; gap: 6px; }
+.chart-detail-actions .chart-detail-link { width: auto; flex: 1; }
 .chart-detail-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 3. の加工のカード。無効なカードは見出しのチェック以外を薄くする */
@@ -176,19 +179,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .card-body { border: none; margin: 0; padding: 0; transition: opacity 0.2s; }
 .card-body p { margin: 6px 0; }
 .card.off .card-body { opacity: 0.4; }
-.card-options { display: grid; gap: 2px; max-height: 260px; overflow-y: auto; }
-.card-option { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 0.9rem; }
-.offset-option { grid-template-columns: auto 1fr auto minmax(0, 11em); }
-.offset-option select { min-width: 0; }
-/* 「指定しない」は灰色の文字（警告ではない）。選択肢の一覧の文字は通常の色に戻す */
-.offset-option select.unset { color: var(--muted); }
-.offset-option select option { color: var(--ink); }
-/* チェックしていない行の選択欄は、押せないことがはっきり分かるようにする */
-.offset-option select:disabled { opacity: 0.3; border-style: dashed; cursor: not-allowed; }
 .pie-note { margin: 0; text-align: center; }
-.offset-section { margin-top: 8px; }
-.offset-section + .offset-section { border-top: 1px dashed var(--line); padding-top: 8px; }
-.offset-section-title { font-size: 0.85rem; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
 .warn-text { color: var(--ink-2); background: var(--warn-bg); border-radius: 6px; padding: 2px 8px; }
 
 /* 3. の加工で除いているカテゴリーの行 */
@@ -219,7 +210,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 .info-body a { color: var(--accent); }
 
 /* 3. の工程（除外・相殺）のカードと、条件のバッジ */
-.steps { display: grid; gap: 12px; margin: 12px 0; }
+/* 3. の区分。左が相殺、右が除外（狭い画面では縦に並べる） */
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; margin: 12px 0; }
 .badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .badge-rule {
   border-radius: 999px; padding: 2px 10px; font-size: 0.85rem; cursor: pointer;
@@ -228,32 +220,32 @@ button:disabled { opacity: 0.4; cursor: default; }
 .badge-rule.off { opacity: 0.5; text-decoration: line-through; background: var(--page); border-style: dashed; }
 .badge-add { border-radius: 999px; padding: 2px 10px; font-size: 0.85rem; border-style: dashed; }
 /* 条件の編集画面（モーダル）。下に当たる記録の一覧を出す */
-.condition-dialog {
+.record-dialog {
   width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0;
   border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--ink);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
 }
-.condition-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
-.condition-editor { display: grid; gap: 8px; padding: 14px 18px; font-size: 0.9rem; }
-.condition-editor h3 { margin: 0; }
-.condition-results { border-top: 1px solid var(--line); padding-top: 8px; }
-.condition-results p { margin: 0 0 6px; }
+.record-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.record-editor { display: grid; gap: 8px; padding: 14px 18px; font-size: 0.9rem; }
+.record-editor h3 { margin: 0; }
+.record-footer { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+.record-footer p { margin: 0; }
+.record-results { border-top: 1px solid var(--line); padding-top: 8px; }
+.record-results p { margin: 0 0 6px; }
 .results-scroll { max-height: 45vh; overflow-y: auto; }
 .results-scroll table { display: table; width: 100%; }
 .results-memo { white-space: normal; }
-.condition-results button.pin { font-size: 0.8rem; padding: 1px 8px; white-space: nowrap; }
-.condition-results tbody tr { cursor: pointer; }
-.condition-results tbody tr:hover td { background: color-mix(in oklch, var(--accent) 5%, transparent); }
-.condition-results .picked-row td { background: color-mix(in oklch, var(--accent) 12%, transparent); }
-.condition-results .picked { margin-bottom: 10px; }
-.condition-results .picked .results-scroll { max-height: 25vh; }
-.condition-results p button.pin { margin-left: 8px; }
+.record-results button.pin { font-size: 0.8rem; padding: 1px 8px; white-space: nowrap; }
+.record-results tbody tr { cursor: pointer; }
+.record-results tbody tr:hover td { background: color-mix(in oklch, var(--accent) 5%, transparent); }
+.record-results .picked-row td { background: color-mix(in oklch, var(--accent) 12%, transparent); }
+.record-results .picked { margin-bottom: 10px; }
+.record-results .picked .results-scroll { max-height: 25vh; }
+.record-results p button.pin { margin-left: 8px; }
 .results-scroll thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
 .sort-button { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; }
 .sort-button:hover { color: var(--accent); }
 .sort-mark { display: inline-block; width: 1em; font-size: 0.75em; margin-left: 2px; }
-.condition-editor .editor-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.condition-editor label { display: inline-flex; align-items: center; gap: 4px; }
-.condition-editor select.unset { color: var(--muted); }
-.condition-editor select option { color: var(--ink); }
+.record-editor .editor-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.record-editor label { display: inline-flex; align-items: center; gap: 4px; }
 .push-right { margin-left: auto; }

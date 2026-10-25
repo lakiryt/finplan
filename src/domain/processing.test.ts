@@ -3,15 +3,14 @@ import { parseCsv } from './importers'
 import {
   applyProcessing,
   defaultProcessing,
+  activeRules,
   hasCriteria,
   isProcessed,
-  isStepActive,
   matches,
   outcomeOf,
   parseProcessingConfig,
   processedAmounts,
   recordKey,
-  UNASSIGNED_OFFSET,
   type Condition,
   type ProcessingConfig,
 } from './processing'
@@ -23,13 +22,14 @@ const rows = (list: typeof txs) => rawMonthlyRows(list, '2026-01', '2026-03')
 const balance = (list: typeof txs) => rows(list).reduce((s, r) => s + r.income - r.expense, 0)
 const byMemo = (list: typeof txs, memo: string) => list.find((t) => t.memo === memo)
 
-const config = (
-  exclude: { when: Condition }[] = [],
-  offset: { when: Condition; target: string }[] = [],
-): ProcessingConfig => ({
-  version: 2,
-  exclude: { enabled: true, rules: exclude.map((r, i) => ({ id: `e${i}`, enabled: true, ...r })) },
-  offset: { enabled: true, rules: offset.map((r, i) => ({ id: `o${i}`, enabled: true, ...r })) },
+const allOn = { offset: true, exclude: true }
+const config = (exclude: { when: Condition }[] = [], offset: { when: Condition; target: string }[] = []): ProcessingConfig => ({
+  version: 3,
+  rules: [
+    ...offset.map((r, i) => ({ id: `o${i}`, enabled: true, ...r })),
+    ...exclude.map((r, i) => ({ id: `e${i}`, enabled: true, target: null, ...r })),
+  ],
+  enabled: { income: allOn, expense: allOn },
 })
 
 describe('conditions', () => {
@@ -53,13 +53,13 @@ describe('conditions', () => {
     expect(matches(picked, { ...super1, memo: 'スーパー（書き換え）' })).toBe(false)
     expect(matches(picked, byMemo(txs, '携帯1月')!)).toBe(false)
     expect(hasCriteria({ side: 'expense', records: [] })).toBe(false)
-    expect(parseProcessingConfig(config([{ when: picked }])).exclude.rules[0].when).toEqual(picked)
+    expect(parseProcessingConfig(config([{ when: picked }])).rules[0].when).toEqual(picked)
   })
 
   it('treats a condition with only a side as inactive', () => {
     expect(hasCriteria({ side: 'expense' })).toBe(false)
     expect(matches({ side: 'expense' }, super1)).toBe(false)
-    expect(isStepActive(config([{ when: { side: 'expense' } }]).exclude)).toBe(false)
+    expect(activeRules(config([{ when: { side: 'expense' } }]))).toEqual([])
   })
 })
 
@@ -76,10 +76,11 @@ describe('exclude', () => {
     expect(byMemo(out, '家賃')).toBeDefined()
   })
 
-  it('ignores disabled rules and disabled steps', () => {
+  it('ignores disabled rules and disabled sections (side × kind)', () => {
     const c = config([{ when: { side: 'expense', category: '貯蓄' } }])
-    expect(applyProcessing(txs, { ...c, exclude: { ...c.exclude, enabled: false } })).toBe(txs)
-    expect(applyProcessing(txs, { ...c, exclude: { ...c.exclude, rules: [{ ...c.exclude.rules[0], enabled: false }] } })).toBe(txs)
+    expect(applyProcessing(txs, { ...c, enabled: { ...c.enabled, expense: { offset: true, exclude: false } } })).toBe(txs)
+    expect(applyProcessing(txs, { ...c, enabled: { ...c.enabled, income: { offset: false, exclude: false } } })).not.toBe(txs)
+    expect(applyProcessing(txs, { ...c, rules: [{ ...c.rules[0], enabled: false }] })).toBe(txs)
   })
 })
 
@@ -101,14 +102,16 @@ describe('offset', () => {
     expect(balance(out)).toBe(balance(txs))
   })
 
-  it('subtracts from the whole other side when no target is chosen', () => {
+  it('can subtract into the blank category', () => {
     const out = applyProcessing(txs, config([], [{ when: { side: 'income', category: '回収' }, target: '' }]))
-    expect(byMemo(out, '割り勘 半額')).toMatchObject({ category: UNASSIGNED_OFFSET, side: 'expense' })
+    expect(byMemo(out, '割り勘 半額')).toMatchObject({ category: '', side: 'expense' })
   })
 
   it('takes priority over exclusion, and is dropped when the target is excluded', () => {
     const both = config([{ when: { side: 'income', category: '回収' } }], [{ when: { side: 'income', category: '回収' }, target: '食費' }])
     expect(outcomeOf(byMemo(txs, '割り勘 半額')!, both).kind).toBe('offset')
+    // 相殺を後に並べても、相殺が優先
+    expect(outcomeOf(byMemo(txs, '割り勘 半額')!, { ...both, rules: [...both.rules].reverse() }).kind).toBe('offset')
     const intoExcluded = config([{ when: { side: 'expense', category: '貯蓄' } }], [{ when: { side: 'income', category: '回収' }, target: '貯蓄' }])
     expect(byMemo(applyProcessing(txs, intoExcluded), '割り勘 半額')).toBeUndefined()
   })
@@ -116,7 +119,7 @@ describe('offset', () => {
 
 describe('summaries and parsing', () => {
   it('reports processed amounts per category and side', () => {
-    const c = config([{ when: { side: 'expense', category: '家賃', memo: '泊' } }], [{ when: { side: 'income', category: '回収' }, target: '' }])
+    const c = config([{ when: { side: 'expense', category: '家賃', memo: '泊' } }], [{ when: { side: 'income', category: '回収' }, target: '食費' }])
     const amounts = processedAmounts(txs, c)
     expect(amounts.expense.get('家賃')).toEqual({ excluded: 8000, offset: 0 })
     expect(amounts.income.get('回収')).toEqual({ excluded: 0, offset: 500 })
@@ -125,8 +128,10 @@ describe('summaries and parsing', () => {
   })
 
   it('parses configs and rejects broken ones', () => {
-    expect(defaultProcessing).toEqual({ version: 2, exclude: { enabled: false, rules: [] }, offset: { enabled: false, rules: [] } })
-    expect(() => parseProcessingConfig({ version: 2, exclude: { rules: [{ id: 'a', when: { side: 'x' } }] }, offset: { rules: [] } })).toThrow()
-    expect(() => parseProcessingConfig({ version: 1, modules: [] })).toThrow()
+    expect(defaultProcessing).toEqual(config())
+    // target が無い条件は除外、区分の有効・無効が無ければ有効
+    expect(parseProcessingConfig({ version: 3, rules: [{ id: 'e0', enabled: true, when: { side: 'income', category: '回収' } }] })).toEqual(config([{ when: { side: 'income', category: '回収' } }]))
+    expect(() => parseProcessingConfig({ version: 3, rules: [{ id: 'a', when: { side: 'x' } }] })).toThrow()
+    expect(() => parseProcessingConfig({ version: 2, exclude: { rules: [] }, offset: { rules: [] } })).toThrow()
   })
 })

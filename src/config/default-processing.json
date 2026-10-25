@@ -1,5 +1,8 @@
 {
-  "version": 2,
-  "exclude": { "enabled": false, "rules": [] },
-  "offset": { "enabled": false, "rules": [] }
+  "version": 3,
+  "rules": [],
+  "enabled": {
+    "income": { "offset": true, "exclude": true },
+    "expense": { "offset": true, "exclude": true }
+  }
 }

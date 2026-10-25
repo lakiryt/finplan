@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
 import { flatten, reconcileGroups, sortByTotal } from '../domain/groups'
-import { applyProcessing, isProcessed, isStepActive, processedAmounts, UNASSIGNED_OFFSET, type ProcessingConfig } from '../domain/processing'
+import { activeRules, applyProcessing, isProcessed, processedAmounts, type ProcessingConfig } from '../domain/processing'
 import { categoryTotals, emptyCategoryStat, rankByTotal, rawCategoryStats, rawMonthlyRows, type RawMonth, type Side } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
@@ -36,6 +36,8 @@ interface Props {
   processing: ProcessingConfig
   from: string
   to: string
+  /** 棒グラフの詳細から、その月の記録を開く */
+  onShowMonth: (side: Side, month: string) => void
 }
 
 /** 上のカードで切り替える表示。収支のときは、円グラフと表は支出を出す */
@@ -55,7 +57,7 @@ function balanceMonths(rows: RawMonth[]): BalanceMonth[] {
 }
 
 /** 2. 支出と収入。カードで支出・収入・収支を切り替え、グラフと表（大分類）で中身を見る */
-export function RawOverview({ transactions, processing, from, to }: Props) {
+export function RawOverview({ transactions, processing, from, to, onShowMonth }: Props) {
   const theme = useChartTheme()
   const [view, saveView] = useStoredState<ViewConfig>('finplan.view', initialView, parseViewConfig)
   // 表示の設定の変更はすべてここを通し、元に戻せるようにする
@@ -74,7 +76,6 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
     income: isProcessed(processing, 'income') ? '収入（加工後）' : '収入',
     balance: '収支',
   }
-  const sideName: Record<Side, string> = { income: '収入', expense: '支出' }
 
   const inPeriod = useMemo(() => filterByMonths(processed, from, to), [processed, from, to])
   const rows = useMemo(() => rawMonthlyRows(inPeriod, from, to), [inPeriod, from, to])
@@ -118,17 +119,17 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
 
   // グラフは重いので、系列とデータは関係する値が変わったときだけ作り直す
   // 相殺で差し引いた分により期間合計がマイナスになる系列も残す（円グラフの内側の輪・棒グラフの0の下に出す）
-  const unassigned = stats.get(UNASSIGNED_OFFSET)
-  const series = useMemo(() => {
-    const list = displaySeries(current).map((s) => ({
-      ...s,
-      color: s.color ?? theme.other,
-      total: s.members.reduce((sum, m) => sum + (stats.get(m)?.total ?? 0), 0),
-    }))
-    // 差し引く先を指定しない相殺は、どのカテゴリーにも属さない系列として最後に足す
-    if (unassigned?.total) list.push({ key: UNASSIGNED_OFFSET, label: UNASSIGNED_OFFSET, color: theme.other, members: [UNASSIGNED_OFFSET], total: unassigned.total })
-    return list.filter((s) => s.total !== 0)
-  }, [current, stats, theme, unassigned])
+  const series = useMemo(
+    () =>
+      displaySeries(current)
+        .map((s) => ({
+          ...s,
+          color: s.color ?? theme.other,
+          total: s.members.reduce((sum, m) => sum + (stats.get(m)?.total ?? 0), 0),
+        }))
+        .filter((s) => s.total !== 0),
+    [current, stats, theme],
+  )
   const bars = useMemo<BarsSpec>(
     () =>
       mode === 'balance'
@@ -153,7 +154,7 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
     }
   }
 
-  const activeLabels = [isStepActive(processing.exclude) && '除外', isStepActive(processing.offset) && '相殺'].filter(Boolean)
+  const activeLabels = [activeRules(processing, 'offset').length && '相殺', activeRules(processing, 'exclude').length && '除外'].filter(Boolean)
 
   return (
     <UndoSessionContext.Provider value={session}>
@@ -163,7 +164,7 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
           {activeLabels.length
             ? `3. の加工（${activeLabels.join('・')}）を反映しています。`
             : '3. の加工はまだ反映していません（貯金・口座移動なども含まれます）。'}
-          カードを押すと、下のグラフと表が切り替わります（収支のときは、月ごとの収支と累積収支のグラフになります）。
+          カードを押すと、下のグラフと表が切り替わります（収支のときは、月ごとの収支と累積収支のグラフになります）。棒を押すと、その月の内訳と記録を見られます。
         </p>
         <div className="summary-cards">
           {MODES.map((m) => (
@@ -185,6 +186,8 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
           mean={summaries[mode].mean}
           median={summaries[mode].median}
           theme={theme}
+          side={side}
+          onShowMonth={onShowMonth}
         />
 
         {/* 収支のときはカテゴリーの内訳を見ないので、表とその操作を出さない */}
@@ -204,11 +207,6 @@ export function RawOverview({ transactions, processing, from, to }: Props) {
                 表の順番がグラフの順番（棒グラフは下から）です。左のつまみ（⋮⋮）で並べ替え、右のバーの端をドラッグするか ↑↓ で大分類にまとめます。
               </span>
             </div>
-            {unassigned?.total ? (
-              <p className="muted small">
-                {UNASSIGNED_OFFSET}: 期間合計 {yen(unassigned.total)}（どのカテゴリーにも付けずに、{sideName[side]}全体から差し引いた分。グラフでは灰色）
-              </p>
-            ) : null}
             <CategoryLegendTable
               rows={legendRows}
               groups={groups}
