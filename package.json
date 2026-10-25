@@ -12,6 +12,7 @@
     "inspect": "tsx scripts/inspect.ts"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "papaparse": "^5.7.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

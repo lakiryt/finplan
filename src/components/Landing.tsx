@@ -37,7 +37,7 @@ export function Landing({ onLoad, onSample }: Props) {
           <button onClick={onSample}>サンプルのデータで試す</button>
         </div>
         <p className="privacy">
-          <LockIcon /> CSVはこのブラウザの中だけで処理します。サーバーには送信しません。
+          <LockIcon /> CSVはこのブラウザの中だけで処理します。サーバーには送信しません（アクセス数の集計に Vercel Analytics を使っています）。
         </p>
       </header>
 
