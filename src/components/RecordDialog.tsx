@@ -15,6 +15,7 @@ const UNASSIGNED = '__unassigned__'
 const targetValue = (target: Target | null) => (target === null ? NO_TARGET : target.category === null ? UNASSIGNED : `cat:${target.category}`)
 const parseTargetValue = (value: string): Target | null =>
   value === NO_TARGET ? null : value === UNASSIGNED ? { category: null } : { category: value.slice('cat:'.length) }
+const DATE_MAX = '9999-12-31'
 /** 一覧に出す件数の上限（並べ替えた後の上位） */
 const RESULT_LIMIT = 200
 
@@ -156,8 +157,9 @@ function RecordEditor({
       </div>
       <div className="editor-row">
         期間
-        <input type="date" value={c.from ?? ''} onChange={(e) => setWhen({ from: e.target.value || undefined })} />〜
-        <input type="date" value={c.to ?? ''} onChange={(e) => setWhen({ to: e.target.value || undefined })} />
+        {/* 上限が無いとブラウザは年を6桁まで受け付けるので、4桁に収める */}
+        <input type="date" max={DATE_MAX} value={c.from ?? ''} onChange={(e) => setWhen({ from: e.target.value || undefined })} />〜
+        <input type="date" max={DATE_MAX} value={c.to ?? ''} onChange={(e) => setWhen({ to: e.target.value || undefined })} />
       </div>
 
       <div className="record-results">
