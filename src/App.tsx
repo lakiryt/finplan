@@ -7,7 +7,7 @@ import { RecordDialog } from './components/RecordDialog'
 import { RawOverview } from './components/RawOverview'
 import { SettingsIO } from './components/SettingsIO'
 import type { RecordsRequest, RuleDraft } from './components/ruleText'
-import { APP_NAME, APP_TAGLINE } from './config/app'
+import { APP_NAME } from './config/app'
 import { initialProcessing, initialView } from './config/initial'
 import { filterByMonths, monthOf, monthRange } from './domain/aggregate'
 import { applyProcessing, parseProcessingConfig, type ProcessingConfig } from './domain/processing'
@@ -93,8 +93,10 @@ export default function App() {
   return (
     <main>
       <header className="app-header">
-        <span className="brand">{APP_NAME}</span>
-        <span className="muted small">{APP_TAGLINE}</span>
+        <h1 className="app-title">
+          <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" />
+          {APP_NAME}
+        </h1>
       </header>
 
       <section>
