@@ -27,20 +27,28 @@ export interface Condition {
 }
 
 /**
+ * 相殺で差し引く反対側の先。category が null なら、どのカテゴリーにも付けずに反対側の全体から差し引く（UNASSIGNED_OFFSET）。
+ * 空欄のカテゴリー（''）とは区別する
+ */
+export interface Target {
+  category: string | null
+}
+
+/**
  * 加工の条件。条件に当たる記録を、その側から除く。
- * target は、同じ額を差し引く反対側のカテゴリー（相殺。収支は変わらない）。null なら差し引かない（除外）
+ * target があれば、反対側からも同じ額を差し引く（相殺。収支は変わらない）。null なら差し引かない（除外）
  */
 export interface Rule {
   id: string
   enabled: boolean
   when: Condition
-  target: string | null
+  target: Target | null
 }
 
 /** 相殺（反対側からも差し引く）か、除外（その側から除くだけ）か */
 export type Kind = 'offset' | 'exclude'
 export const KINDS: Kind[] = ['offset', 'exclude']
-export const kindOf = (rule: { target: string | null }): Kind => (rule.target === null ? 'exclude' : 'offset')
+export const kindOf = (rule: { target: Target | null }): Kind => (rule.target === null ? 'exclude' : 'offset')
 
 export interface ProcessingConfig {
   version: 3
@@ -49,6 +57,9 @@ export interface ProcessingConfig {
   /** 側 × 相殺・除外の区分ごとに、まとめて有効・無効を切り替える */
   enabled: Record<Side, Record<Kind, boolean>>
 }
+
+/** 差し引く先を指定しない相殺を数えるカテゴリー名（どのカテゴリーにも属さない差し引き） */
+export const UNASSIGNED_OFFSET = '差し引き（指定なし）'
 
 export const opposite = (side: Side): Side => (side === 'income' ? 'expense' : 'income')
 
@@ -70,11 +81,18 @@ function parseCondition(raw: unknown): Condition {
   return cond
 }
 
+function parseTarget(raw: unknown): Target | null {
+  if (raw === null || raw === undefined) return null
+  const t = raw as Record<string, unknown>
+  if (typeof t !== 'object') throw new Error('差し引く先の形式が正しくありません')
+  // 空欄のカテゴリー（''）にも差し引ける
+  return { category: typeof t.category === 'string' ? t.category : null }
+}
+
 function parseRule(raw: unknown): Rule {
   const r = raw as Record<string, unknown> | null
   if (!r) throw new Error('条件の形式が正しくありません')
-  // 空欄のカテゴリー（''）にも差し引ける
-  return { id: String(r.id), enabled: Boolean(r.enabled), when: parseCondition(r.when), target: typeof r.target === 'string' ? r.target : null }
+  return { id: String(r.id), enabled: Boolean(r.enabled), when: parseCondition(r.when), target: parseTarget(r.target) }
 }
 
 export function parseProcessingConfig(raw: unknown): ProcessingConfig {
@@ -120,7 +138,7 @@ export function matches(c: Condition, tx: Transaction): boolean {
 export const activeRules = (config: ProcessingConfig, kind?: Kind) =>
   config.rules.filter((r) => r.enabled && hasCriteria(r.when) && config.enabled[r.when.side][kindOf(r)] && (!kind || kindOf(r) === kind))
 
-/** 記録に何が起きるか。相殺は除外より優先（相殺は「除外＋反対側からも差し引く」なので） */
+/** 記録に何が起きるか。相殺は除外より優先（相殺は「除外＋反対側からも差し引く」なので）。target は差し引いた先のカテゴリー名 */
 export type Outcome = { kind: 'keep' } | { kind: 'exclude'; rule: Rule } | { kind: 'offset'; rule: Rule; target: string; moved: Transaction | null }
 
 export function outcomeOf(tx: Transaction, config: ProcessingConfig): Outcome {
@@ -128,7 +146,7 @@ export function outcomeOf(tx: Transaction, config: ProcessingConfig): Outcome {
   if (!side) return { kind: 'keep' }
   const offset = activeRules(config, 'offset').find((r) => matches(r.when, tx))
   if (offset) {
-    const target = offset.target ?? ''
+    const target = offset.target?.category ?? UNASSIGNED_OFFSET
     // 反対側の差し引きとして数え直す（side を反対側にし、金額の符号はそのまま）。
     // 収入側の記録（プラス）を支出側にすると支出が減り、支出側の記録（マイナス）を収入側にすると収入が減る
     const moved: Transaction = { ...tx, category: target, side: opposite(side) }

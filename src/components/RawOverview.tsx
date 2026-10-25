@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { initialView } from '../config/initial'
 import { filterByMonths } from '../domain/aggregate'
 import { flatten, reconcileGroups, sortByTotal } from '../domain/groups'
-import { activeRules, applyProcessing, isProcessed, processedAmounts, type ProcessingConfig } from '../domain/processing'
+import { activeRules, applyProcessing, isProcessed, processedAmounts, UNASSIGNED_OFFSET, type ProcessingConfig } from '../domain/processing'
 import { categoryTotals, emptyCategoryStat, rankByTotal, rawCategoryStats, rawMonthlyRows, type RawMonth, type Side } from '../domain/raw'
 import { seriesStats } from '../domain/stats'
 import type { Transaction } from '../domain/types'
@@ -119,17 +119,17 @@ export function RawOverview({ transactions, processing, from, to, onShowMonth }:
 
   // グラフは重いので、系列とデータは関係する値が変わったときだけ作り直す
   // 相殺で差し引いた分により期間合計がマイナスになる系列も残す（円グラフの内側の輪・棒グラフの0の下に出す）
-  const series = useMemo(
-    () =>
-      displaySeries(current)
-        .map((s) => ({
-          ...s,
-          color: s.color ?? theme.other,
-          total: s.members.reduce((sum, m) => sum + (stats.get(m)?.total ?? 0), 0),
-        }))
-        .filter((s) => s.total !== 0),
-    [current, stats, theme],
-  )
+  const unassigned = stats.get(UNASSIGNED_OFFSET)
+  const series = useMemo(() => {
+    const list = displaySeries(current).map((s) => ({
+      ...s,
+      color: s.color ?? theme.other,
+      total: s.members.reduce((sum, m) => sum + (stats.get(m)?.total ?? 0), 0),
+    }))
+    // 差し引く先を指定しない相殺は、どのカテゴリーにも属さない系列として最後に足す
+    if (unassigned?.total) list.push({ key: UNASSIGNED_OFFSET, label: UNASSIGNED_OFFSET, color: theme.other, members: [UNASSIGNED_OFFSET], total: unassigned.total })
+    return list.filter((s) => s.total !== 0)
+  }, [current, stats, theme, unassigned])
   const bars = useMemo<BarsSpec>(
     () =>
       mode === 'balance'
@@ -207,6 +207,11 @@ export function RawOverview({ transactions, processing, from, to, onShowMonth }:
                 表の順番がグラフの順番（棒グラフは下から）です。左のつまみ（⋮⋮）で並べ替え、右のバーの端をドラッグするか ↑↓ で大分類にまとめます。
               </span>
             </div>
+            {unassigned?.total ? (
+              <p className="muted small">
+                {UNASSIGNED_OFFSET}: 期間合計 {yen(unassigned.total)}（どのカテゴリーにも付けずに、{labels[side]}全体から差し引いた分。グラフでは灰色）
+              </p>
+            ) : null}
             <CategoryLegendTable
               rows={legendRows}
               groups={groups}

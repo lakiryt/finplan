@@ -72,5 +72,5 @@ for (const r of config.rules) {
   const hit = hasCriteria(r.when) ? inPeriod.filter((t) => matches(r.when, t)) : []
   const total = hit.reduce((s, t) => s + Math.abs(t.amount), 0)
   const on = r.enabled && config.enabled[r.when.side][kindOf(r)]
-  console.log([kindOf(r) === 'offset' ? '相殺' : '除外', on ? 'on ' : 'off', `${hit.length}件`, fmt(total), JSON.stringify(r.when), r.target === null ? '' : `→ ${r.target}`].join('\t'))
+  console.log([kindOf(r) === 'offset' ? '相殺' : '除外', on ? 'on ' : 'off', `${hit.length}件`, fmt(total), JSON.stringify(r.when), r.target === null ? '' : `→ ${r.target.category ?? '指定なし'}`].join('\t'))
 }

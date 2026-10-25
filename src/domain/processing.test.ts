@@ -12,6 +12,7 @@ import {
   parseProcessingConfig,
   processedAmounts,
   recordKey,
+  UNASSIGNED_OFFSET,
   type Condition,
   type ProcessingConfig,
 } from './processing'
@@ -24,10 +25,11 @@ const balance = (list: typeof txs) => rows(list).reduce((s, r) => s + r.income -
 const byMemo = (list: typeof txs, memo: string) => list.find((t) => t.memo === memo)
 
 const allOn = { offset: true, exclude: true }
-const config = (exclude: { when: Condition }[] = [], offset: { when: Condition; target: string }[] = []): ProcessingConfig => ({
+/** offset の target は差し引く先のカテゴリー名（null なら指定しない） */
+const config = (exclude: { when: Condition }[] = [], offset: { when: Condition; target: string | null }[] = []): ProcessingConfig => ({
   version: 3,
   rules: [
-    ...offset.map((r, i) => ({ id: `o${i}`, enabled: true, ...r })),
+    ...offset.map((r, i) => ({ id: `o${i}`, enabled: true, when: r.when, target: { category: r.target } })),
     ...exclude.map((r, i) => ({ id: `e${i}`, enabled: true, target: null, ...r })),
   ],
   enabled: { income: allOn, expense: allOn },
@@ -103,9 +105,12 @@ describe('offset', () => {
     expect(balance(out)).toBe(balance(txs))
   })
 
-  it('can subtract into the blank category', () => {
-    const out = applyProcessing(txs, config([], [{ when: { side: 'income', category: '回収' }, target: '' }]))
-    expect(byMemo(out, '割り勘 半額')).toMatchObject({ category: '', side: 'expense' })
+  it('can subtract into the blank category, or from the whole other side when no target is chosen', () => {
+    const blank = applyProcessing(txs, config([], [{ when: { side: 'income', category: '回収' }, target: '' }]))
+    expect(byMemo(blank, '割り勘 半額')).toMatchObject({ category: '', side: 'expense' })
+    const unassigned = applyProcessing(txs, config([], [{ when: { side: 'income', category: '回収' }, target: null }]))
+    expect(byMemo(unassigned, '割り勘 半額')).toMatchObject({ category: UNASSIGNED_OFFSET, side: 'expense' })
+    expect(balance(unassigned)).toBe(balance(txs))
   })
 
   it('takes priority over exclusion, and is dropped when the target is excluded', () => {
@@ -139,6 +144,9 @@ describe('summaries and parsing', () => {
     expect(defaultProcessing).toEqual(config())
     // target が無い条件は除外、区分の有効・無効が無ければ有効
     expect(parseProcessingConfig({ version: 3, rules: [{ id: 'e0', enabled: true, when: { side: 'income', category: '回収' } }] })).toEqual(config([{ when: { side: 'income', category: '回収' } }]))
+    // 差し引く先の「指定なし」（category: null）と空欄のカテゴリー（''）を区別して読み込む
+    const targets = config([], [{ when: { side: 'income', category: '回収' }, target: null }, { when: { side: 'income', category: '回収' }, target: '' }])
+    expect(parseProcessingConfig(JSON.parse(JSON.stringify(targets)))).toEqual(targets)
     expect(() => parseProcessingConfig({ version: 3, rules: [{ id: 'a', when: { side: 'x' } }] })).toThrow()
     expect(() => parseProcessingConfig({ version: 2, exclude: { rules: [] }, offset: { rules: [] } })).toThrow()
   })

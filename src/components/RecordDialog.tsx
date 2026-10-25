@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { hasCriteria, matches, opposite, outcomeOf, recordKey, whollyExcluded, type Condition, type ProcessingConfig } from '../domain/processing'
+import { hasCriteria, matches, opposite, outcomeOf, recordKey, UNASSIGNED_OFFSET, whollyExcluded, type Condition, type ProcessingConfig, type Target } from '../domain/processing'
 import { txSide, type Side } from '../domain/raw'
 import type { Transaction } from '../domain/types'
 import { yen } from './format'
 import { SIDE_LABEL, type RecordsRequest, type RuleDraft } from './ruleText'
 
 const ANY = '__any__'
-/** 差し引く先の選択肢で「差し引かない（除外）」を表す値。カテゴリーは空欄もあり得るので、値には接頭辞を付ける */
+/**
+ * 差し引く先の選択肢の値。「差し引かない（除外）」「指定せずに差し引く」とカテゴリーを区別する
+ * （カテゴリーは空欄もあり得るので、カテゴリーの値には接頭辞を付ける）
+ */
 const NO_TARGET = '__none__'
-const targetValue = (target: string | null) => (target === null ? NO_TARGET : `cat:${target}`)
+const UNASSIGNED = '__unassigned__'
+const targetValue = (target: Target | null) => (target === null ? NO_TARGET : target.category === null ? UNASSIGNED : `cat:${target.category}`)
+const parseTargetValue = (value: string): Target | null =>
+  value === NO_TARGET ? null : value === UNASSIGNED ? { category: null } : { category: value.slice('cat:'.length) }
 /** 一覧に出す件数の上限（並べ替えた後の上位） */
 const RESULT_LIMIT = 200
 
@@ -194,17 +200,21 @@ function RecordEditor({
           <strong>{picked.length > 0 ? `選んだ記録${picked.length}件` : 'この検索に当たる記録'}</strong>を{SIDE_LABEL[c.side]}から除き、{SIDE_LABEL[other]}側では
           <select
             value={targetValue(draft.target)}
-            onChange={(e) => setDraft({ ...draft, target: e.target.value === NO_TARGET ? null : e.target.value.slice('cat:'.length) })}
+            onChange={(e) => setDraft({ ...draft, target: parseTargetValue(e.target.value) })}
           >
             <option value={NO_TARGET}>差し引かない（除外）</option>
+            <option value={UNASSIGNED}>カテゴリーを指定せずに差し引く（相殺）</option>
             {categories[other].map((cat) => (
               // カテゴリー全体を除外している先へ差し引くと、除外と同じになるので選べない
-              <option key={cat} value={targetValue(cat)} disabled={excluded.has(cat)}>
+              <option key={cat} value={targetValue({ category: cat })} disabled={excluded.has(cat)}>
                 「{cat || '（空欄）'}」{excluded.has(cat) ? '（除外しているので選べません）' : 'から差し引く（相殺）'}
               </option>
             ))}
           </select>
         </div>
+        {draft.target?.category === null && (
+          <p className="muted small">内訳を気にしないとき向けです。{SIDE_LABEL[other]}のどのカテゴリーにも付けずに全体から差し引き、2. では「{UNASSIGNED_OFFSET}」として灰色で出します。</p>
+        )}
         {!hasCriteria(result) && <p className="muted small">条件にするには、カテゴリー・メモ・期間のどれかで検索するか、記録を選んでください（何も指定しないと全件に当たってしまうため）。</p>}
         <div className="editor-row">
           <button
