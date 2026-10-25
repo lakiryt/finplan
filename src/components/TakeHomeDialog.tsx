@@ -74,14 +74,16 @@ export function TakeHomeDialog({ open, onApply, onClose }: Props) {
         </div>
 
         <div className="tab-panel" role="tabpanel">
-          {tab === 'wage' && <WagePanel input={input} setInput={setInput} monthlyPay={result.monthlyPay} annualPay={result.annualPay} />}
+          {tab === 'wage' && (
+            <WagePanel input={input} setInput={setInput} monthlyPay={result.monthlyPay} bonusTotal={result.bonusTotal} annualPay={result.annualPay} />
+          )}
 
           {tab === 'incomeTax' && (
             <>
               {include('incomeTax')}
               <Lines
                 rows={[
-                  ['年収（月の給与 × 12）', result.incomeTax.revenue],
+                  [result.bonusTotal ? '年収（月給 × 12 ＋ 賞与）' : '年収（月の給与 × 12）', result.incomeTax.revenue],
                   ['給与所得控除', -result.incomeTax.salaryDeduction],
                   ['基礎控除', -result.incomeTax.basicDeduction],
                   ['社会保険料控除', -result.incomeTax.socialInsurance, '含めた社会保険料'],
@@ -198,8 +200,8 @@ export function TakeHomeDialog({ open, onApply, onClose }: Props) {
         <table className="takehome-summary">
           <tbody>
             <tr>
-              <td>月の給与（額面）</td>
-              <td className="num">{yen(result.monthlyPay)}</td>
+              <td>月の給与（額面）{result.bonusTotal ? ' ＋ 賞与の月割り' : ''}</td>
+              <td className="num">{yen(result.annualPay / 12)}</td>
             </tr>
             {ITEMS.map((item) => {
               const it = result.items[item.key]
@@ -211,13 +213,13 @@ export function TakeHomeDialog({ open, onApply, onClose }: Props) {
               )
             })}
             <tr className="takehome-result">
-              <td>手取りの目安（月）</td>
+              <td>手取りの目安（月{result.bonusTotal ? 'の平均、賞与込み' : ''}）</td>
               <td className="num">{yen(result.takeHomeMonthly)}</td>
             </tr>
           </tbody>
         </table>
         <p className="muted small">
-          税・保険料は年額を12で割った月の平均です。含めない社会保険料は、所得税・住民税の社会保険料控除にも入れません。扶養・生命保険料などの控除、残業・賞与・手当は入れていません。詳しくは
+          税・保険料は年額を12で割った月の平均です{result.bonusTotal ? '（賞与も12で割って足しています。賞与の無い月の手取りはこれより少なくなります）' : ''}。含めない社会保険料は、所得税・住民税の社会保険料控除にも入れません。扶養・生命保険料などの控除、残業・賞与・手当は入れていません。詳しくは
           docs/take-home-pay.md にまとめています。
         </p>
         <div className="row">
@@ -274,28 +276,65 @@ function Lines({ rows }: { rows: [string, number, string?][] }) {
   )
 }
 
-function WagePanel({ input, setInput, monthlyPay, annualPay }: { input: TakeHomeInput; setInput: (i: TakeHomeInput) => void; monthlyPay: number; annualPay: number }) {
+function WagePanel({
+  input,
+  setInput,
+  monthlyPay,
+  bonusTotal,
+  annualPay,
+}: {
+  input: TakeHomeInput
+  setInput: (i: TakeHomeInput) => void
+  monthlyPay: number
+  bonusTotal: number
+  annualPay: number
+}) {
   const setWage = (patch: Partial<TakeHomeInput['wage']>) => setInput({ ...input, wage: { ...input.wage, ...patch } })
+  const setSalary = (patch: Partial<TakeHomeInput['salary']>) => setInput({ ...input, salary: { ...input.salary, ...patch } })
   const w = input.wage
+  const salary = input.payMode === 'salary'
   return (
     <>
+      <div className="editor-row">
+        {(
+          [
+            ['hourly', '時給で計算（アルバイトなど）'],
+            ['salary', '月給と賞与で計算'],
+          ] as const
+        ).map(([mode, label]) => (
+          <label key={mode}>
+            <input type="radio" checked={input.payMode === mode} onChange={() => setInput({ ...input, payMode: mode })} />
+            {label}
+          </label>
+        ))}
+      </div>
       <div className="fields">
-        <NumberField label="時給" unit="円" step={10} value={w.hourly} onChange={(v) => setWage({ hourly: v })} />
-        <NumberField label="月の労働時間" unit="時間" step={1} value={w.hours} onChange={(v) => setWage({ hours: v })} />
-        <NumberField label="うち深夜（22時〜5時）の時間" unit="時間" step={1} value={w.nightHours} onChange={(v) => setWage({ nightHours: v })} />
-        <label className="field">
-          <span>深夜の時給</span>
-          <span>
-            <input
-              type="number"
-              step={10}
-              value={w.nightHourly ?? ''}
-              placeholder={String(Math.round(w.hourly * (1 + NIGHT_PREMIUM)))}
-              onChange={(e) => setWage({ nightHourly: e.target.value === '' ? undefined : Number(e.target.value) })}
-            />
-            円
-          </span>
-        </label>
+        {salary ? (
+          <>
+            <NumberField label="月給（額面）" unit="円" step={10000} value={input.salary.monthly} onChange={(v) => setSalary({ monthly: v })} />
+            <NumberField label="賞与（1回あたりの額面）" unit="円" step={10000} value={input.salary.bonus} onChange={(v) => setSalary({ bonus: v })} />
+            <NumberField label="賞与の回数（年）" unit="回" step={1} value={input.salary.bonusTimes} onChange={(v) => setSalary({ bonusTimes: v })} />
+          </>
+        ) : (
+          <>
+            <NumberField label="時給" unit="円" step={10} value={w.hourly} onChange={(v) => setWage({ hourly: v })} />
+            <NumberField label="月の労働時間" unit="時間" step={1} value={w.hours} onChange={(v) => setWage({ hours: v })} />
+            <NumberField label="うち深夜（22時〜5時）の時間" unit="時間" step={1} value={w.nightHours} onChange={(v) => setWage({ nightHours: v })} />
+            <label className="field">
+              <span>深夜の時給</span>
+              <span>
+                <input
+                  type="number"
+                  step={10}
+                  value={w.nightHourly ?? ''}
+                  placeholder={String(Math.round(w.hourly * (1 + NIGHT_PREMIUM)))}
+                  onChange={(e) => setWage({ nightHourly: e.target.value === '' ? undefined : Number(e.target.value) })}
+                />
+                円
+              </span>
+            </label>
+          </>
+        )}
         <label className="field">
           <span>税のルール</span>
           <select value={input.year} onChange={(e) => setInput({ ...input, year: e.target.value as TaxYear })}>
@@ -309,11 +348,17 @@ function WagePanel({ input, setInput, monthlyPay, annualPay }: { input: TakeHome
       </div>
       <Lines
         rows={[
-          ['月の給与（額面）', monthlyPay],
-          ['年収（× 12）', annualPay],
+          [salary ? '月給（額面）' : '月の給与（額面）', monthlyPay],
+          ...(salary ? [['賞与（年額）', bonusTotal] as [string, number]] : []),
+          [salary ? '年収（月給 × 12 ＋ 賞与）' : '年収（× 12）', annualPay],
         ]}
       />
-      <p className="muted small">深夜の時給は、空欄なら時給の1.25倍（法定の割増の最低）で数えます。通勤手当は含めないでください（一定額まで税がかからないため）。</p>
+      <p className="muted small">
+        {salary
+          ? '月給は残業代などを含めた毎月の額面です。賞与にも社会保険料（標準賞与額にかかる）と雇用保険料がかかります。'
+          : '深夜の時給は、空欄なら時給の1.25倍（法定の割増の最低）で数えます。'}
+        通勤手当は含めないでください（一定額まで税がかからないため）。
+      </p>
     </>
   )
 }

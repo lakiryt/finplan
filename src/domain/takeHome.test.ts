@@ -6,6 +6,7 @@ import {
   parseTakeHomeInput,
   pensionStandardMonthly,
   residentTax,
+  standardBonuses,
   standardMonthly,
   takeHome,
   type TakeHomeInput,
@@ -35,6 +36,34 @@ describe('social insurance', () => {
     expect(h.annual).toBe(94_900 + 35_200 + 3_500)
     const reduced = healthInsurance(input((i) => ({ ...i, health: { ...i.health, mode: 'national', reduction: 0.5 } })), 150_000)
     expect(reduced.annual).toBeLessThan(h.annual)
+  })
+})
+
+describe('salary and bonus', () => {
+  const salary = input((i) => ({ ...i, payMode: 'salary', salary: { monthly: 300_000, bonus: 500_000, bonusTimes: 2 } }))
+
+  it('adds bonuses to the yearly pay and charges insurance on them', () => {
+    const r = takeHome(salary)
+    expect(r.monthlyPay).toBe(300_000)
+    expect(r.annualPay).toBe(4_600_000)
+    // 健康保険: 月 300,000 × 10.13% ÷ 2 = 15,195、賞与 500,000 × 10.13% ÷ 2 = 25,325
+    expect(r.health.annual).toBe(15_195 * 12 + 25_325 * 2)
+    // 厚生年金: 月 300,000 × 9.15% = 27,450、賞与 500,000 × 9.15% = 45,750
+    expect(r.pension.annual).toBe(27_450 * 12 + 45_750 * 2)
+    // 雇用保険: 月 1,500、賞与 2,500
+    expect(r.employment.annual).toBe(1_500 * 12 + 2_500 * 2)
+  })
+
+  it('rounds the standard bonus down to 1,000 yen and applies the caps', () => {
+    expect(standardBonuses({ amount: 123_456, times: 1 }, 'health')).toEqual([123_000])
+    expect(standardBonuses({ amount: 2_000_000, times: 2 }, 'pension')).toEqual([1_500_000, 1_500_000])
+    expect(standardBonuses({ amount: 3_000_000, times: 2 }, 'health')).toEqual([3_000_000, 2_730_000])
+  })
+
+  it('ignores the salary fields in hourly mode', () => {
+    const hourly = takeHome(input((i) => ({ ...i, salary: { monthly: 300_000, bonus: 500_000, bonusTimes: 2 } })))
+    expect(hourly.bonusTotal).toBe(0)
+    expect(hourly.monthlyPay).toBe(144_000)
   })
 })
 

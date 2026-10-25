@@ -17,8 +17,21 @@ export interface NhiPart {
   cap: number
 }
 
+/** 月給と賞与（会社員など） */
+export interface Salary {
+  /** 月給（額面） */
+  monthly: number
+  /** 賞与1回あたりの額面 */
+  bonus: number
+  /** 賞与の年の回数 */
+  bonusTimes: number
+}
+
 export interface TakeHomeInput {
+  /** 時給で計算するか（アルバイト）、月給と賞与で計算するか */
+  payMode: 'hourly' | 'salary'
   wage: Wage
+  salary: Salary
   year: TaxYear
   /** 40〜64歳なら介護保険料がかかる */
   age40to64: boolean
@@ -68,7 +81,9 @@ export interface TakeHomeInput {
 
 /** 初期値。料率は 2026年度のもの。国民健康保険は東京都中央区の 2026年度の値を例にしている（市区町村ごとに違う） */
 export const DEFAULT_TAKE_HOME: TakeHomeInput = {
+  payMode: 'hourly',
   wage: { hourly: 1200, hours: 120, nightHours: 0 },
+  salary: { monthly: 250_000, bonus: 0, bonusTimes: 2 },
   year: 'r8',
   age40to64: false,
   incomeTax: { include: true },
@@ -115,6 +130,9 @@ function mergeDefaults(def: unknown, raw: unknown): unknown {
 
 // ---- 社会保険 ----
 
+const floorTo = (n: number, unit: number) => Math.floor(n / unit) * unit
+const NO_BONUS = { amount: 0, times: 0 }
+
 /** 健康保険の標準報酬月額の等級（報酬月額の下限, 標準報酬月額）。厚生年金は 88,000〜650,000 の範囲 */
 const GRADES: [number, number][] = [
   [0, 58_000], [63_000, 68_000], [73_000, 78_000], [83_000, 88_000], [93_000, 98_000], [101_000, 104_000],
@@ -139,6 +157,28 @@ export function standardMonthly(pay: number): number {
 /** 厚生年金の標準報酬月額（健康保険の等級を 88,000〜650,000 に収める） */
 export const pensionStandardMonthly = (pay: number) => Math.min(Math.max(standardMonthly(pay), 88_000), 650_000)
 
+/** 標準賞与額の上限。健康保険は年度の累計、厚生年金は1回あたり */
+const HEALTH_BONUS_CAP_PER_YEAR = 5_730_000
+const PENSION_BONUS_CAP_PER_PAYMENT = 1_500_000
+
+/** 賞与1回ごとの標準賞与額（1,000円未満切り捨て）。健康保険は年度の累計の上限まで */
+export function standardBonuses(bonus: Bonus, kind: 'health' | 'pension'): number[] {
+  const std = floorTo(Math.max(0, bonus.amount), 1_000)
+  let left = HEALTH_BONUS_CAP_PER_YEAR
+  return Array.from({ length: Math.max(0, Math.floor(bonus.times)) }, () => {
+    if (kind === 'pension') return Math.min(std, PENSION_BONUS_CAP_PER_PAYMENT)
+    const v = Math.min(std, left)
+    left -= v
+    return v
+  })
+}
+
+/** 賞与（1回あたりの額と年の回数）。時給で計算するときは無し */
+export interface Bonus {
+  amount: number
+  times: number
+}
+
 /**
  * 本人の負担分（料率の半分）。給与から差し引くときの端数は、50銭以下を切り捨て、50銭を超えたら切り上げる。
  * 小数の誤差を避けるため、料率は 0.001% 単位の整数にしてから計算する
@@ -157,24 +197,34 @@ export interface InsuranceResult {
   lines: { label: string; value: number; note?: string }[]
 }
 
-export function healthInsurance(input: TakeHomeInput, pay: number): InsuranceResult {
+/** 賞与にかかる保険料の、1回ごとの額の合計と内訳の行 */
+function bonusShares(bonus: Bonus, kind: 'health' | 'pension', rate: number) {
+  const shares = standardBonuses(bonus, kind).map((std) => employeeShare(std, rate))
+  const total = shares.reduce((s, v) => s + v, 0)
+  const lines = shares.length && bonus.amount > 0 ? [{ label: `賞与の分（${shares.length}回の合計）`, value: total, note: '標準賞与額 × 料率の半分' }] : []
+  return { total, lines }
+}
+
+export function healthInsurance(input: TakeHomeInput, pay: number, bonus: Bonus = NO_BONUS): InsuranceResult {
   const h = input.health
   if (h.mode === 'manual') return { annual: Math.max(0, h.manualAnnual), lines: [] }
   if (h.mode === 'employee') {
     const std = standardMonthly(pay)
     const rate = h.employeeRate + h.childRate + (input.age40to64 ? h.careRate : 0)
     const monthly = employeeShare(std, rate)
+    const b = bonusShares(bonus, 'health', rate)
     return {
-      annual: monthly * 12,
+      annual: monthly * 12 + b.total,
       lines: [
         { label: '標準報酬月額', value: std },
         { label: '料率（本人と勤務先の合計）', value: rate, note: '%' },
         { label: '月額（本人の負担）', value: monthly, note: '料率の半分' },
+        ...b.lines,
       ],
     }
   }
   // 国民健康保険: 所得割の元は、給与所得 − 43万円（住民税の基礎控除）
-  const base = Math.max(0, salaryIncome(pay * 12, input.year) - 430_000)
+  const base = Math.max(0, salaryIncome(pay * 12 + bonus.amount * bonus.times, input.year) - 430_000)
   const parts = input.age40to64 ? [...h.national, h.nationalCare] : h.national
   const lines = parts.map((p) => {
     const levy = Math.floor((base * p.rate) / 100) + Math.floor(p.perCapita * (1 - h.reduction))
@@ -185,23 +235,34 @@ export function healthInsurance(input: TakeHomeInput, pay: number): InsuranceRes
   return { annual, lines: [{ label: '所得割の元（給与所得 − 43万円）', value: base }, ...lines] }
 }
 
-export function pension(input: TakeHomeInput, pay: number): InsuranceResult {
+export function pension(input: TakeHomeInput, pay: number, bonus: Bonus = NO_BONUS): InsuranceResult {
   const p = input.pension
   if (p.mode === 'national') return { annual: p.nationalMonthly * 12, lines: [{ label: '月額', value: p.nationalMonthly }] }
   const std = pensionStandardMonthly(pay)
   const monthly = employeeShare(std, p.employeeRate)
+  const b = bonusShares(bonus, 'pension', p.employeeRate)
   return {
-    annual: monthly * 12,
+    annual: monthly * 12 + b.total,
     lines: [
       { label: '標準報酬月額', value: std },
       { label: '月額（本人の負担）', value: monthly, note: `${p.employeeRate}% の半分` },
+      ...b.lines,
     ],
   }
 }
 
-export function employmentInsurance(input: TakeHomeInput, pay: number): InsuranceResult {
+export function employmentInsurance(input: TakeHomeInput, pay: number, bonus: Bonus = NO_BONUS): InsuranceResult {
   const monthly = employeeShare(pay, input.employment.rate, false)
-  return { annual: monthly * 12, lines: [{ label: '月額', value: monthly, note: `給与の ${input.employment.rate}%` }] }
+  // 賞与には、標準賞与額ではなく賞与の額そのものにかかる
+  const perBonus = bonus.amount > 0 ? employeeShare(bonus.amount, input.employment.rate, false) : 0
+  const times = Math.max(0, Math.floor(bonus.times))
+  return {
+    annual: monthly * 12 + perBonus * times,
+    lines: [
+      { label: '月額', value: monthly, note: `給与の ${input.employment.rate}%` },
+      ...(perBonus && times ? [{ label: `賞与の分（${times}回の合計）`, value: perBonus * times, note: `賞与の ${input.employment.rate}%` }] : []),
+    ],
+  }
 }
 
 // ---- 住民税 ----
@@ -223,7 +284,6 @@ export interface ResidentTaxBreakdown {
 
 /** 均等割がかからない合計所得の上限（単身、級地ごと） */
 const PER_CAPITA_EXEMPT: Record<1 | 2 | 3, number> = { 1: 450_000, 2: 415_000, 3: 380_000 }
-const floorTo = (n: number, unit: number) => Math.floor(n / unit) * unit
 
 /** 単身・給与だけの人の住民税（年額）。所得は、同じ年の給与で代わりにする（実際は前の年の所得で決まる） */
 export function residentTax(revenue: number, socialInsurance: number, year: TaxYear, perCapita: number, grade: 1 | 2 | 3): ResidentTaxBreakdown {
@@ -255,7 +315,11 @@ export function residentTax(revenue: number, socialInsurance: number, year: TaxY
 export type ItemKey = 'incomeTax' | 'residentTax' | 'health' | 'pension' | 'employment'
 
 export interface TakeHomeResult {
+  /** 月の給与（時給なら時給と労働時間から、月給なら月給） */
   monthlyPay: number
+  /** 賞与の年額 */
+  bonusTotal: number
+  /** 年収（月の給与 × 12 ＋ 賞与） */
   annualPay: number
   health: InsuranceResult
   pension: InsuranceResult
@@ -271,11 +335,14 @@ export interface TakeHomeResult {
 }
 
 export function takeHome(input: TakeHomeInput): TakeHomeResult {
-  const pay = monthlyPay(input.wage)
-  const annualPay = pay * 12
-  const health = healthInsurance(input, pay)
-  const pensionResult = pension(input, pay)
-  const employment = employmentInsurance(input, pay)
+  const salaryMode = input.payMode === 'salary'
+  const pay = salaryMode ? Math.max(0, Math.round(input.salary.monthly)) : monthlyPay(input.wage)
+  const bonus: Bonus = salaryMode ? { amount: Math.max(0, Math.round(input.salary.bonus)), times: Math.max(0, Math.floor(input.salary.bonusTimes)) } : NO_BONUS
+  const bonusTotal = bonus.amount * bonus.times
+  const annualPay = pay * 12 + bonusTotal
+  const health = healthInsurance(input, pay, bonus)
+  const pensionResult = pension(input, pay, bonus)
+  const employment = employmentInsurance(input, pay, bonus)
   // 含めない社会保険料は、払わないものとして扱う（控除にもしない）
   const socialInsurance =
     (input.health.include ? health.annual : 0) + (input.pension.include ? pensionResult.annual : 0) + (input.employment.include ? employment.annual : 0)
@@ -292,6 +359,7 @@ export function takeHome(input: TakeHomeInput): TakeHomeResult {
   const deducted = Object.values(items).reduce((s, i) => s + (i.include ? i.annual : 0), 0)
   return {
     monthlyPay: pay,
+    bonusTotal,
     annualPay,
     health,
     pension: pensionResult,
