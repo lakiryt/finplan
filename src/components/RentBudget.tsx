@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import type { SeriesStats } from '../domain/stats'
 import { useStoredState } from '../state/storage'
 import { yen } from './format'
+import { TakeHomeDialog } from './TakeHomeDialog'
 
 interface Props {
   living: SeriesStats
@@ -10,6 +12,7 @@ interface Props {
 export function RentBudget({ living }: Props) {
   const [takeHome, setTakeHome] = useStoredState('finplan.rent.takeHome', 200000)
   const [savings, setSavings] = useStoredState('finplan.rent.savings', 0)
+  const [calculating, setCalculating] = useState(false)
 
   const bases = [
     { label: '月平均', value: living.mean },
@@ -24,6 +27,9 @@ export function RentBudget({ living }: Props) {
           <span>想定する手取り（月）</span>
           <span>
             <input type="number" step={10000} value={takeHome} onChange={(e) => setTakeHome(Number(e.target.value))} />円
+            <button className="inline-button" onClick={() => setCalculating(true)}>
+              計算する
+            </button>
           </span>
         </label>
         <label className="field">
@@ -51,6 +57,7 @@ export function RentBudget({ living }: Props) {
           ))}
         </tbody>
       </table>
+      <TakeHomeDialog open={calculating} onApply={setTakeHome} onClose={() => setCalculating(false)} />
     </div>
   )
 }

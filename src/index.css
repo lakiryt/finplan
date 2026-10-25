@@ -69,6 +69,10 @@ tr.warn td { background: var(--warn-bg); }
 
 .fields { display: grid; gap: 8px; max-width: 560px; }
 .field { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.inline-button { margin-left: 8px; }
+.takehome .fields { max-width: none; margin-bottom: 8px; }
+.takehome table { display: table; width: 100%; margin: 8px 0; }
+.takehome-result td { font-weight: 600; border-top: 2px solid var(--line); }
 
 input.short { width: 4.5em; }
 button:disabled { opacity: 0.4; cursor: default; }
