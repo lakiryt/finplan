@@ -38,14 +38,12 @@ type SetSection = <K extends Section>(key: K, patch: Partial<TakeHomeInput[K]>) 
 /** 空欄は0として扱う */
 const num = (v: string) => (v === '' ? 0 : Number(v))
 
-/**
- * 想定する手取りを、時給と労働時間から計算する窓。所得税・住民税・社会保険をタブに分け、
- * それぞれ手取りの計算に含めるかを選べる。詳しくは docs/take-home-pay.md
- */
+/** 手取りの計算だけを載せた、独立したページ（検索から来た人向け） */
+export const TAKE_HOME_PAGE = `${import.meta.env.BASE_URL}tedori/`
+
+/** 4. の「計算する」で開く窓。中身は TakeHomeCalculator で、計算した手取りを想定する手取りに入れられる */
 export function TakeHomeDialog({ open, onApply, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
-  const [input, setInput] = useStoredState<TakeHomeInput>('finplan.takeHome.v3', DEFAULT_TAKE_HOME, parseTakeHomeInput)
-  const [tab, setTab] = useState<Tab>('wage')
 
   useEffect(() => {
     const dialog = ref.current
@@ -53,6 +51,48 @@ export function TakeHomeDialog({ open, onApply, onClose }: Props) {
     if (open && !dialog.open) dialog.showModal()
     if (!open && dialog.open) dialog.close()
   }, [open])
+
+  return (
+    <dialog ref={ref} className="json-dialog takehome-dialog" onClose={onClose} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="json-dialog-body">
+        <h3>手取りの計算</h3>
+        <TakeHomeCalculator
+          actions={(takeHome) => (
+            <div className="row">
+              <button
+                onClick={() => {
+                  onApply(takeHome)
+                  onClose()
+                }}
+              >
+                この額を想定する手取りに入れる
+              </button>
+              <button onClick={onClose}>閉じる</button>
+              <a className="push-right small" href={TAKE_HOME_PAGE} target="_blank" rel="noreferrer">
+                別のページで開く
+              </a>
+            </div>
+          )}
+        />
+      </div>
+    </dialog>
+  )
+}
+
+/**
+ * 手取りの計算。時給と労働時間（または月給と賞与）の職をいくつでも足し、所得税・住民税・社会保険をタブに分けて、
+ * それぞれ手取りの計算に含めるかを選べる。入力はこのブラウザに保存し、窓と独立したページで共通。詳しくは docs/take-home-pay.md
+ */
+export function TakeHomeCalculator({
+  actions,
+  onPage = false,
+}: {
+  actions?: (takeHomeMonthly: number) => ReactNode
+  /** 手取り計算のページの中で使うか（計算の方法の説明へのリンクを、同じページの中にする） */
+  onPage?: boolean
+}) {
+  const [input, setInput] = useStoredState<TakeHomeInput>('finplan.takeHome.v3', DEFAULT_TAKE_HOME, parseTakeHomeInput)
+  const [tab, setTab] = useState<Tab>('wage')
 
   const result = takeHome(input)
   const insuredNames = input.jobs.flatMap((j, i) => (j.socialInsurance ? [jobLabel(j, i)] : [])).join('・')
@@ -65,183 +105,177 @@ export function TakeHomeDialog({ open, onApply, onClose }: Props) {
   )
 
   return (
-    <dialog ref={ref} className="json-dialog takehome-dialog" onClose={onClose} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="json-dialog-body takehome">
-        <h3>手取りの計算</h3>
-        <div className="tabs" role="tablist">
-          <TabButton active={tab === 'wage'} onClick={() => setTab('wage')} label="給与" sub={yen(result.monthlyPay)} />
+    <div className="takehome">
+      <div className="tabs" role="tablist">
+        <TabButton active={tab === 'wage'} onClick={() => setTab('wage')} label="給与" sub={yen(result.monthlyPay)} />
+        {ITEMS.map((item) => {
+          const it = result.items[item.key]
+          return (
+            <TabButton
+              key={item.key}
+              active={tab === item.key}
+              off={!it.include}
+              onClick={() => setTab(item.key)}
+              label={item.label}
+              sub={it.include ? `−${yen(it.annual / 12)}` : '含めない'}
+            />
+          )
+        })}
+      </div>
+
+      <div className="tab-panel" role="tabpanel">
+        {tab === 'wage' && <WagePanel input={input} setInput={setInput} result={result} />}
+
+        {tab === 'incomeTax' && (
+          <>
+            {include('incomeTax')}
+            <Lines
+              rows={[
+                [input.jobs.length > 1 ? '年収（すべての職の合計）' : '年収', result.incomeTax.revenue],
+                ['給与所得控除', -result.incomeTax.salaryDeduction],
+                ['基礎控除', -result.incomeTax.basicDeduction],
+                ['社会保険料控除', -result.incomeTax.socialInsurance, '含めた社会保険料'],
+                ['課税所得', result.incomeTax.taxable, '1,000円未満切り捨て'],
+                ['所得税', result.incomeTax.baseTax],
+                ['復興特別所得税', result.incomeTax.reconstruction, '所得税の2.1%'],
+                ['年額', result.incomeTax.total, '100円未満切り捨て'],
+              ]}
+            />
+            <p className="muted small">
+              1年働いた場合の年額（年末調整・確定申告で決まる額）です。毎月の天引きはこれと違うことがあります。
+              {input.jobs.length > 1 ? '2か所以上で働くと、主な勤務先以外では天引きが多くなり（乙欄）、確定申告で精算します。' : ''}
+            </p>
+          </>
+        )}
+
+        {tab === 'residentTax' && (
+          <>
+            {include('residentTax')}
+            <div className="editor-row">
+              {(
+                [
+                  ['calc', '計算する'],
+                  ['manual', '金額を入れる'],
+                ] as const
+              ).map(([mode, label]) => (
+                <label key={mode}>
+                  <input type="radio" checked={input.residentTax.mode === mode} onChange={() => set('residentTax', { mode })} />
+                  {label}
+                </label>
+              ))}
+            </div>
+            {input.residentTax.mode === 'manual' ? (
+              <>
+                <NumberField label="住民税の年額" unit="円" step={1000} value={input.residentTax.manualAnnual} onChange={(v) => set('residentTax', { manualAnnual: v })} />
+                <p className="muted small">住民税は前の年の所得で決まります。収入が変わった最初の年は、前の年の所得による住民税（通知書の額など）を入れてください。</p>
+              </>
+            ) : (
+              <>
+                <NumberField label="均等割（森林環境税を含む）" unit="円" step={100} value={input.residentTax.perCapita} onChange={(v) => set('residentTax', { perCapita: v })} />
+                <label className="field">
+                  <span>級地（均等割がかからない所得の線）</span>
+                  <select value={input.residentTax.grade} onChange={(e) => set('residentTax', { grade: Number(e.target.value) as 1 | 2 | 3 })}>
+                    <option value={1}>1級地（大都市など。所得45万円以下）</option>
+                    <option value={2}>2級地（所得41.5万円以下）</option>
+                    <option value={3}>3級地（所得38万円以下）</option>
+                  </select>
+                </label>
+                {result.residentTax && (
+                  <Lines
+                    rows={[
+                      ['給与所得', result.residentTax.salaryIncome],
+                      ['基礎控除', -result.residentTax.basicDeduction, '所得税より小さい'],
+                      ['社会保険料控除', -result.residentTax.socialInsurance, '含めた社会保険料'],
+                      ['課税所得', result.residentTax.taxable, '1,000円未満切り捨て'],
+                      ['調整控除', -result.residentTax.adjustment, '基礎控除の差による'],
+                      ['所得割', result.residentTax.incomeLevy, '課税所得の10% − 調整控除'],
+                      ['均等割', result.residentTax.perCapitaLevy],
+                      ['年額', result.residentTax.total],
+                    ]}
+                  />
+                )}
+                <p className="muted small">
+                  単身で、同じ働き方が続いた2年目以降の額です（住民税は前の年の所得で決まり、6月から払います）。最初の年は「金額を入れる」で、前の年の所得による額を入れてください。
+                </p>
+              </>
+            )}
+          </>
+        )}
+
+        {tab === 'health' && (
+          <HealthPanel
+            input={input}
+            set={set}
+            setAge={(age40to64) => setInput({ ...input, age40to64 })}
+            include={include('health')}
+            result={result.health}
+            insuredNames={insuredNames}
+          />
+        )}
+
+        {tab === 'pension' && (
+          <>
+            {include('pension')}
+            <p className="scheme">{result.pension.scheme === 'employee' ? `厚生年金（${insuredNames}で加入）` : '国民年金（勤務先の厚生年金に入る職が無いため）'}</p>
+            {result.pension.scheme === 'employee' ? (
+              <NumberField label="厚生年金の料率（本人と勤務先の合計）" unit="%" step={0.01} value={input.pension.employeeRate} onChange={(v) => set('pension', { employeeRate: v })} />
+            ) : (
+              <NumberField label="国民年金の月額" unit="円" step={10} value={input.pension.nationalMonthly} onChange={(v) => set('pension', { nationalMonthly: v })} />
+            )}
+            <Lines rows={result.pension.lines.map((l) => [l.label, l.value, l.note])} />
+            <p className="muted small">
+              どちらになるかは、給与のタブの「この勤務先の健康保険・厚生年金に入る」で決まります。国民年金は 2026年度 月17,920円、2027年度 月18,290円です。
+            </p>
+          </>
+        )}
+
+        {tab === 'employment' && (
+          <>
+            {include('employment')}
+            {!input.jobs.some((j) => j.employmentInsurance) && <p className="scheme">雇用保険に入る職がありません（給与のタブで選びます）。</p>}
+            <NumberField label="本人の負担率" unit="%" step={0.05} value={input.employment.rate} onChange={(v) => set('employment', { rate: v })} />
+            <Lines rows={result.employment.lines.map((l) => [l.label, l.value, l.note])} />
+            <p className="muted small">
+              週20時間以上・31日以上働く見込みなら加入します（2028年10月からは週10時間以上）。2か所以上で条件を満たしても、入るのは主な賃金を受け取る1か所だけです（65歳以上は、2か所を合わせて週20時間以上なら申し出て入れる制度があります）。2026年度の一般の事業の本人負担は0.5%です。
+            </p>
+          </>
+        )}
+      </div>
+
+      <table className="takehome-summary">
+        <tbody>
+          <tr>
+            <td>月の給与（額面）{result.bonusTotal ? ' ＋ 賞与の月割り' : ''}</td>
+            <td className="num">{yen(result.annualPay / 12)}</td>
+          </tr>
           {ITEMS.map((item) => {
             const it = result.items[item.key]
             return (
-              <TabButton
-                key={item.key}
-                active={tab === item.key}
-                off={!it.include}
-                onClick={() => setTab(item.key)}
-                label={item.label}
-                sub={it.include ? `−${yen(it.annual / 12)}` : '含めない'}
-              />
+              <tr key={item.key} className={it.include ? undefined : 'off'}>
+                <td>{item.label}</td>
+                <td className="num">{it.include ? `−${yen(it.annual / 12)}` : `（含めない ${yen(it.annual / 12)}）`}</td>
+              </tr>
             )
           })}
-        </div>
-
-        <div className="tab-panel" role="tabpanel">
-          {tab === 'wage' && <WagePanel input={input} setInput={setInput} result={result} />}
-
-          {tab === 'incomeTax' && (
-            <>
-              {include('incomeTax')}
-              <Lines
-                rows={[
-                  [input.jobs.length > 1 ? '年収（すべての職の合計）' : '年収', result.incomeTax.revenue],
-                  ['給与所得控除', -result.incomeTax.salaryDeduction],
-                  ['基礎控除', -result.incomeTax.basicDeduction],
-                  ['社会保険料控除', -result.incomeTax.socialInsurance, '含めた社会保険料'],
-                  ['課税所得', result.incomeTax.taxable, '1,000円未満切り捨て'],
-                  ['所得税', result.incomeTax.baseTax],
-                  ['復興特別所得税', result.incomeTax.reconstruction, '所得税の2.1%'],
-                  ['年額', result.incomeTax.total, '100円未満切り捨て'],
-                ]}
-              />
-              <p className="muted small">
-                1年働いた場合の年額（年末調整・確定申告で決まる額）です。毎月の天引きはこれと違うことがあります。
-                {input.jobs.length > 1 ? '2か所以上で働くと、主な勤務先以外では天引きが多くなり（乙欄）、確定申告で精算します。' : ''}
-              </p>
-            </>
-          )}
-
-          {tab === 'residentTax' && (
-            <>
-              {include('residentTax')}
-              <div className="editor-row">
-                {(
-                  [
-                    ['calc', '計算する'],
-                    ['manual', '金額を入れる'],
-                  ] as const
-                ).map(([mode, label]) => (
-                  <label key={mode}>
-                    <input type="radio" checked={input.residentTax.mode === mode} onChange={() => set('residentTax', { mode })} />
-                    {label}
-                  </label>
-                ))}
-              </div>
-              {input.residentTax.mode === 'manual' ? (
-                <>
-                  <NumberField label="住民税の年額" unit="円" step={1000} value={input.residentTax.manualAnnual} onChange={(v) => set('residentTax', { manualAnnual: v })} />
-                  <p className="muted small">住民税は前の年の所得で決まります。収入が変わった最初の年は、前の年の所得による住民税（通知書の額など）を入れてください。</p>
-                </>
-              ) : (
-                <>
-                  <NumberField label="均等割（森林環境税を含む）" unit="円" step={100} value={input.residentTax.perCapita} onChange={(v) => set('residentTax', { perCapita: v })} />
-                  <label className="field">
-                    <span>級地（均等割がかからない所得の線）</span>
-                    <select value={input.residentTax.grade} onChange={(e) => set('residentTax', { grade: Number(e.target.value) as 1 | 2 | 3 })}>
-                      <option value={1}>1級地（大都市など。所得45万円以下）</option>
-                      <option value={2}>2級地（所得41.5万円以下）</option>
-                      <option value={3}>3級地（所得38万円以下）</option>
-                    </select>
-                  </label>
-                  {result.residentTax && (
-                    <Lines
-                      rows={[
-                        ['給与所得', result.residentTax.salaryIncome],
-                        ['基礎控除', -result.residentTax.basicDeduction, '所得税より小さい'],
-                        ['社会保険料控除', -result.residentTax.socialInsurance, '含めた社会保険料'],
-                        ['課税所得', result.residentTax.taxable, '1,000円未満切り捨て'],
-                        ['調整控除', -result.residentTax.adjustment, '基礎控除の差による'],
-                        ['所得割', result.residentTax.incomeLevy, '課税所得の10% − 調整控除'],
-                        ['均等割', result.residentTax.perCapitaLevy],
-                        ['年額', result.residentTax.total],
-                      ]}
-                    />
-                  )}
-                  <p className="muted small">
-                    単身で、同じ働き方が続いた2年目以降の額です（住民税は前の年の所得で決まり、6月から払います）。最初の年は「金額を入れる」で、前の年の所得による額を入れてください。
-                  </p>
-                </>
-              )}
-            </>
-          )}
-
-          {tab === 'health' && (
-            <HealthPanel
-              input={input}
-              set={set}
-              setAge={(age40to64) => setInput({ ...input, age40to64 })}
-              include={include('health')}
-              result={result.health}
-              insuredNames={insuredNames}
-            />
-          )}
-
-          {tab === 'pension' && (
-            <>
-              {include('pension')}
-              <p className="scheme">{result.pension.scheme === 'employee' ? `厚生年金（${insuredNames}で加入）` : '国民年金（勤務先の厚生年金に入る職が無いため）'}</p>
-              {result.pension.scheme === 'employee' ? (
-                <NumberField label="厚生年金の料率（本人と勤務先の合計）" unit="%" step={0.01} value={input.pension.employeeRate} onChange={(v) => set('pension', { employeeRate: v })} />
-              ) : (
-                <NumberField label="国民年金の月額" unit="円" step={10} value={input.pension.nationalMonthly} onChange={(v) => set('pension', { nationalMonthly: v })} />
-              )}
-              <Lines rows={result.pension.lines.map((l) => [l.label, l.value, l.note])} />
-              <p className="muted small">
-                どちらになるかは、給与のタブの「この勤務先の健康保険・厚生年金に入る」で決まります。国民年金は 2026年度 月17,920円、2027年度 月18,290円です。
-              </p>
-            </>
-          )}
-
-          {tab === 'employment' && (
-            <>
-              {include('employment')}
-              {!input.jobs.some((j) => j.employmentInsurance) && <p className="scheme">雇用保険に入る職がありません（給与のタブで選びます）。</p>}
-              <NumberField label="本人の負担率" unit="%" step={0.05} value={input.employment.rate} onChange={(v) => set('employment', { rate: v })} />
-              <Lines rows={result.employment.lines.map((l) => [l.label, l.value, l.note])} />
-              <p className="muted small">
-                週20時間以上・31日以上働く見込みなら加入します（2028年10月からは週10時間以上）。2か所以上で条件を満たしても、入るのは主な賃金を受け取る1か所だけです（65歳以上は、2か所を合わせて週20時間以上なら申し出て入れる制度があります）。2026年度の一般の事業の本人負担は0.5%です。
-              </p>
-            </>
-          )}
-        </div>
-
-        <table className="takehome-summary">
-          <tbody>
-            <tr>
-              <td>月の給与（額面）{result.bonusTotal ? ' ＋ 賞与の月割り' : ''}</td>
-              <td className="num">{yen(result.annualPay / 12)}</td>
-            </tr>
-            {ITEMS.map((item) => {
-              const it = result.items[item.key]
-              return (
-                <tr key={item.key} className={it.include ? undefined : 'off'}>
-                  <td>{item.label}</td>
-                  <td className="num">{it.include ? `−${yen(it.annual / 12)}` : `（含めない ${yen(it.annual / 12)}）`}</td>
-                </tr>
-              )
-            })}
-            <tr className="takehome-result">
-              <td>手取りの目安（月{result.bonusTotal ? 'の平均、賞与込み' : ''}）</td>
-              <td className="num">{yen(result.takeHomeMonthly)}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p className="muted small">
-          税・保険料は年額を12で割った月の平均です{result.bonusTotal ? '（賞与も12で割って足しています。賞与の無い月の手取りはこれより少なくなります）' : ''}。含めない社会保険料は、所得税・住民税の社会保険料控除にも入れません。扶養・生命保険料などの控除、残業・賞与・手当は入れていません。詳しくは
-          docs/take-home-pay.md にまとめています。
-        </p>
-        <div className="row">
-          <button
-            onClick={() => {
-              onApply(result.takeHomeMonthly)
-              onClose()
-            }}
-          >
-            この額を想定する手取りに入れる
-          </button>
-          <button onClick={onClose}>閉じる</button>
-        </div>
-      </div>
-    </dialog>
+          <tr className="takehome-result">
+            <td>手取りの目安（月{result.bonusTotal ? 'の平均、賞与込み' : ''}）</td>
+            <td className="num">{yen(result.takeHomeMonthly)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="muted small">
+        税・保険料は年額を12で割った月の平均です{result.bonusTotal ? '（賞与も12で割って足しています。賞与の無い月の手取りはこれより少なくなります）' : ''}。含めない社会保険料は、所得税・住民税の社会保険料控除にも入れません。扶養・生命保険料などの控除は入れていません。計算の方法と限界は
+        {onPage ? (
+          <a href="#method">このページの下</a>
+        ) : (
+          <a href={`${TAKE_HOME_PAGE}#method`} target="_blank" rel="noreferrer">
+            手取り計算のページ
+          </a>
+        )}
+        に載せています。
+      </p>
+      {actions?.(result.takeHomeMonthly)}
+    </div>
   )
 }
 

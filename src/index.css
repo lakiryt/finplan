@@ -89,6 +89,14 @@ input[type="number"] { width: 9em; text-align: right; margin-right: 4px; }
 .app-header h1 { font-size: 1.4rem; }
 .app-title { display: flex; align-items: center; gap: 10px; }
 .app-title img { width: 1.4em; height: 1.4em; }
+/* ---- 手取り計算のページ（/tedori/） ---- */
+.tedori-page header h1 { font-size: 1.6rem; margin: 4px 0 8px; }
+.tedori-page header p { margin: 0 0 8px; }
+.tedori-page h2, .tedori-page h3 { display: block; }
+.tedori-page h2 { margin-top: 20px; }
+.tedori-page h2:first-child { margin-top: 0; }
+.tedori-page ul { padding-left: 1.4em; }
+.tedori-page a { color: var(--accent); }
 .sample-banner { background: var(--warn-bg); border-radius: 8px; padding: 8px 12px; margin: 0 0 8px; }
 
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; display: block; overflow-x: auto; }

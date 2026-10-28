@@ -1,6 +1,7 @@
 import { APP_NAME } from '../config/app'
 import type { Transaction } from '../domain/types'
 import { FileImport } from './FileImport'
+import { TAKE_HOME_PAGE } from './TakeHomeDialog'
 
 interface Props {
   onLoad: (transactions: Transaction[]) => void
@@ -19,6 +20,7 @@ const FEATURES = [
   {
     title: '手取りと予算',
     body: '時給や月給から所得税・住民税・社会保険料を引いた手取りを計算し、生活費と貯金を引いた残りを出します。',
+    link: { href: TAKE_HOME_PAGE, text: '手取りの計算だけを使う' },
   },
 ]
 
@@ -48,6 +50,11 @@ export function Landing({ onLoad, onSample }: Props) {
             <div key={f.title} className="feature">
               <h3>{f.title}</h3>
               <p>{f.body}</p>
+              {'link' in f && f.link && (
+                <p>
+                  <a href={f.link.href}>{f.link.text}</a>
+                </p>
+              )}
             </div>
           ))}
         </div>
