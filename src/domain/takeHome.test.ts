@@ -1,18 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addJob,
+  DEFAULT_JOB,
   DEFAULT_TAKE_HOME,
   employeeShare,
   healthInsurance,
+  jobPay,
   parseTakeHomeInput,
   pensionStandardMonthly,
   residentTax,
   standardBonuses,
   standardMonthly,
   takeHome,
+  type Job,
   type TakeHomeInput,
 } from './takeHome'
 
 const input = (patch: (i: TakeHomeInput) => TakeHomeInput) => patch(structuredClone(DEFAULT_TAKE_HOME))
+const job = (patch: Partial<Job>): Job => ({ ...structuredClone(DEFAULT_JOB), ...patch })
+/** 月給だけの職（賞与なし） */
+const monthlyJob = (monthly: number, patch: Partial<Job> = {}) => job({ payMode: 'salary', salary: { monthly, bonus: 0, bonusTimes: 0 }, ...patch })
 
 describe('social insurance', () => {
   it('finds the standard monthly remuneration, clamped for pension', () => {
@@ -32,15 +39,17 @@ describe('social insurance', () => {
 
   it('computes national health insurance from salary income − 430,000', () => {
     // 月15万円 → 年180万円 → 給与所得106万円 → 所得割の元63万円
-    const h = healthInsurance(input((i) => ({ ...i, health: { ...i.health, mode: 'national' } })), 150_000)
+    const pays = [jobPay(monthlyJob(150_000, { socialInsurance: false }))]
+    const h = healthInsurance(DEFAULT_TAKE_HOME, pays)
+    expect(h.scheme).toBe('national')
     expect(h.annual).toBe(94_900 + 35_200 + 3_500)
-    const reduced = healthInsurance(input((i) => ({ ...i, health: { ...i.health, mode: 'national', reduction: 0.5 } })), 150_000)
+    const reduced = healthInsurance(input((i) => ({ ...i, health: { ...i.health, reduction: 0.5 } })), pays)
     expect(reduced.annual).toBeLessThan(h.annual)
   })
 })
 
 describe('salary and bonus', () => {
-  const salary = input((i) => ({ ...i, payMode: 'salary', salary: { monthly: 300_000, bonus: 500_000, bonusTimes: 2 } }))
+  const salary = input((i) => ({ ...i, jobs: [job({ payMode: 'salary', salary: { monthly: 300_000, bonus: 500_000, bonusTimes: 2 } })] }))
 
   it('adds bonuses to the yearly pay and charges insurance on them', () => {
     const r = takeHome(salary)
@@ -61,9 +70,51 @@ describe('salary and bonus', () => {
   })
 
   it('ignores the salary fields in hourly mode', () => {
-    const hourly = takeHome(input((i) => ({ ...i, salary: { monthly: 300_000, bonus: 500_000, bonusTimes: 2 } })))
+    const hourly = takeHome(input((i) => ({ ...i, jobs: [job({ salary: { monthly: 300_000, bonus: 500_000, bonusTimes: 2 } })] })))
     expect(hourly.bonusTotal).toBe(0)
     expect(hourly.monthlyPay).toBe(144_000)
+  })
+})
+
+describe('several jobs', () => {
+  it('adds up all salaries for taxes, deducting the employment income once', () => {
+    const two = takeHome(input((i) => ({ ...i, jobs: [monthlyJob(150_000), monthlyJob(100_000, { id: 'b', socialInsurance: false, employmentInsurance: false })] })))
+    const one = takeHome(input((i) => ({ ...i, jobs: [monthlyJob(250_000)] })))
+    expect(two.annualPay).toBe(3_000_000)
+    // 給与所得控除は合算した300万円に1回だけ（職ごとに引くと少なく出る）
+    expect(two.incomeTax.salaryIncome).toBe(one.incomeTax.salaryIncome)
+  })
+
+  it('combines the pay of insured jobs into one standard monthly remuneration', () => {
+    const pays = [jobPay(monthlyJob(200_000)), jobPay(monthlyJob(100_000, { id: 'b' }))]
+    const h = healthInsurance(DEFAULT_TAKE_HOME, pays)
+    // 合計30万円 → 標準報酬月額30万円 × 10.13% ÷ 2
+    expect(h.annual).toBe(employeeShare(300_000, 10.13) * 12)
+    // 勤務先で加入しない職の給与は入れない
+    const partly = healthInsurance(DEFAULT_TAKE_HOME, [pays[0], jobPay(monthlyJob(100_000, { id: 'b', socialInsurance: false }))])
+    expect(partly.annual).toBe(employeeShare(200_000, 10.13) * 12)
+  })
+
+  it('uses national health insurance and pension only when no job is insured', () => {
+    const r = takeHome(input((i) => ({ ...i, jobs: [monthlyJob(100_000, { socialInsurance: false }), monthlyJob(80_000, { id: 'b', socialInsurance: false })] })))
+    expect(r.health.scheme).toBe('national')
+    expect(r.pension.scheme).toBe('national')
+    expect(r.pension.annual).toBe(17_920 * 12)
+  })
+
+  it('charges employment insurance only on the jobs that join it', () => {
+    const r = takeHome(input((i) => ({ ...i, jobs: [monthlyJob(150_000), monthlyJob(100_000, { id: 'b', employmentInsurance: false })] })))
+    expect(r.employment.annual).toBe(750 * 12)
+  })
+
+  it('counts the health insurance bonus cap across jobs', () => {
+    expect(standardBonuses([{ amount: 3_000_000, times: 1 }, { amount: 3_000_000, times: 1 }], 'health')).toEqual([3_000_000, 2_730_000])
+  })
+
+  it('adds jobs with unique ids, uninsured by default', () => {
+    const jobs = addJob(addJob([DEFAULT_JOB]))
+    expect(new Set(jobs.map((j) => j.id)).size).toBe(3)
+    expect(jobs[1]).toMatchObject({ socialInsurance: false, employmentInsurance: false })
   })
 })
 
@@ -108,9 +159,11 @@ describe('take-home', () => {
 
   it('restores saved input onto the defaults', () => {
     expect(parseTakeHomeInput(null)).toEqual(DEFAULT_TAKE_HOME)
-    const saved = parseTakeHomeInput({ wage: { hourly: 1500, nightHourly: 2000 }, health: { mode: 'national', national: [] } })
-    expect(saved.wage).toEqual({ hourly: 1500, hours: 120, nightHours: 0, nightHourly: 2000 })
-    expect(saved.health.mode).toBe('national')
+    const saved = parseTakeHomeInput({ jobs: [{ wage: { hourly: 1500, nightHourly: 2000 } }, { id: 'x', payMode: 'salary' }], health: { mode: 'manual', national: [] } })
+    expect(saved.jobs[0].wage).toEqual({ hourly: 1500, hours: 120, nightHours: 0, nightHourly: 2000 })
+    expect(saved.jobs.map((j) => j.id)).toEqual(['job1', 'x'])
+    expect(saved.jobs[1].payMode).toBe('salary')
+    expect(saved.health.mode).toBe('manual')
     expect(saved.health.national).toEqual(DEFAULT_TAKE_HOME.health.national)
   })
 })

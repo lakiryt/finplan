@@ -118,6 +118,10 @@ tr.warn td { background: var(--warn-bg); }
 .tab-panel .editor-row label, .include { display: inline-flex; align-items: center; gap: 4px; }
 .include { font-weight: 600; }
 .nhi-parts input { width: 7em; }
+.job-card { display: grid; gap: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--page); }
+.job-card .fields { max-width: none; }
+.job-name { width: 10em; font-weight: 600; }
+.scheme { font-weight: 600; }
 .takehome-summary tr.off td { color: var(--muted); }
 .takehome table { display: table; width: 100%; margin: 8px 0; }
 .takehome-result td { font-weight: 600; border-top: 2px solid var(--line); }

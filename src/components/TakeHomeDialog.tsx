@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NIGHT_PREMIUM, TAX_YEARS, type TaxYear } from '../domain/incomeTax'
-import { DEFAULT_TAKE_HOME, parseTakeHomeInput, takeHome, type ItemKey, type NhiPart, type TakeHomeInput } from '../domain/takeHome'
+import {
+  addJob,
+  DEFAULT_TAKE_HOME,
+  jobLabel,
+  parseTakeHomeInput,
+  takeHome,
+  type ItemKey,
+  type Job,
+  type NhiPart,
+  type TakeHomeInput,
+  type TakeHomeResult,
+} from '../domain/takeHome'
 import { useStoredState } from '../state/storage'
 import { yen } from './format'
 
@@ -33,7 +44,7 @@ const num = (v: string) => (v === '' ? 0 : Number(v))
  */
 export function TakeHomeDialog({ open, onApply, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
-  const [input, setInput] = useStoredState<TakeHomeInput>('finplan.takeHome.v2', DEFAULT_TAKE_HOME, parseTakeHomeInput)
+  const [input, setInput] = useStoredState<TakeHomeInput>('finplan.takeHome.v3', DEFAULT_TAKE_HOME, parseTakeHomeInput)
   const [tab, setTab] = useState<Tab>('wage')
 
   useEffect(() => {
@@ -44,6 +55,7 @@ export function TakeHomeDialog({ open, onApply, onClose }: Props) {
   }, [open])
 
   const result = takeHome(input)
+  const insuredNames = input.jobs.flatMap((j, i) => (j.socialInsurance ? [jobLabel(j, i)] : [])).join('・')
   const set: SetSection = (key, patch) => setInput({ ...input, [key]: { ...input[key], ...patch } })
   const include = (key: ItemKey) => (
     <label className="include">
@@ -74,16 +86,14 @@ export function TakeHomeDialog({ open, onApply, onClose }: Props) {
         </div>
 
         <div className="tab-panel" role="tabpanel">
-          {tab === 'wage' && (
-            <WagePanel input={input} setInput={setInput} monthlyPay={result.monthlyPay} bonusTotal={result.bonusTotal} annualPay={result.annualPay} />
-          )}
+          {tab === 'wage' && <WagePanel input={input} setInput={setInput} result={result} />}
 
           {tab === 'incomeTax' && (
             <>
               {include('incomeTax')}
               <Lines
                 rows={[
-                  [result.bonusTotal ? '年収（月給 × 12 ＋ 賞与）' : '年収（月の給与 × 12）', result.incomeTax.revenue],
+                  [input.jobs.length > 1 ? '年収（すべての職の合計）' : '年収', result.incomeTax.revenue],
                   ['給与所得控除', -result.incomeTax.salaryDeduction],
                   ['基礎控除', -result.incomeTax.basicDeduction],
                   ['社会保険料控除', -result.incomeTax.socialInsurance, '含めた社会保険料'],
@@ -93,7 +103,10 @@ export function TakeHomeDialog({ open, onApply, onClose }: Props) {
                   ['年額', result.incomeTax.total, '100円未満切り捨て'],
                 ]}
               />
-              <p className="muted small">1年働いた場合の年額（年末調整・確定申告で決まる額）です。毎月の天引きはこれと違うことがあります。</p>
+              <p className="muted small">
+                1年働いた場合の年額（年末調整・確定申告で決まる額）です。毎月の天引きはこれと違うことがあります。
+                {input.jobs.length > 1 ? '2か所以上で働くと、主な勤務先以外では天引きが多くなり（乙欄）、確定申告で精算します。' : ''}
+              </p>
             </>
           )}
 
@@ -157,42 +170,36 @@ export function TakeHomeDialog({ open, onApply, onClose }: Props) {
               set={set}
               setAge={(age40to64) => setInput({ ...input, age40to64 })}
               include={include('health')}
-              lines={result.health.lines}
+              result={result.health}
+              insuredNames={insuredNames}
             />
           )}
 
           {tab === 'pension' && (
             <>
               {include('pension')}
-              <div className="editor-row">
-                {(
-                  [
-                    ['employee', '厚生年金（勤務先で加入）'],
-                    ['national', '国民年金'],
-                  ] as const
-                ).map(([mode, label]) => (
-                  <label key={mode}>
-                    <input type="radio" checked={input.pension.mode === mode} onChange={() => set('pension', { mode })} />
-                    {label}
-                  </label>
-                ))}
-              </div>
-              {input.pension.mode === 'employee' ? (
+              <p className="scheme">{result.pension.scheme === 'employee' ? `厚生年金（${insuredNames}で加入）` : '国民年金（勤務先の厚生年金に入る職が無いため）'}</p>
+              {result.pension.scheme === 'employee' ? (
                 <NumberField label="厚生年金の料率（本人と勤務先の合計）" unit="%" step={0.01} value={input.pension.employeeRate} onChange={(v) => set('pension', { employeeRate: v })} />
               ) : (
                 <NumberField label="国民年金の月額" unit="円" step={10} value={input.pension.nationalMonthly} onChange={(v) => set('pension', { nationalMonthly: v })} />
               )}
               <Lines rows={result.pension.lines.map((l) => [l.label, l.value, l.note])} />
-              <p className="muted small">国民年金は 2026年度 月17,920円、2027年度 月18,290円です。勤務先の厚生年金に入る条件は、健康保険と同じです。</p>
+              <p className="muted small">
+                どちらになるかは、給与のタブの「この勤務先の健康保険・厚生年金に入る」で決まります。国民年金は 2026年度 月17,920円、2027年度 月18,290円です。
+              </p>
             </>
           )}
 
           {tab === 'employment' && (
             <>
               {include('employment')}
+              {!input.jobs.some((j) => j.employmentInsurance) && <p className="scheme">雇用保険に入る職がありません（給与のタブで選びます）。</p>}
               <NumberField label="本人の負担率" unit="%" step={0.05} value={input.employment.rate} onChange={(v) => set('employment', { rate: v })} />
               <Lines rows={result.employment.lines.map((l) => [l.label, l.value, l.note])} />
-              <p className="muted small">週20時間以上・31日以上働く見込みなら加入します（2028年10月からは週10時間以上）。2026年度の一般の事業の本人負担は0.5%です。</p>
+              <p className="muted small">
+                週20時間以上・31日以上働く見込みなら加入します（2028年10月からは週10時間以上）。2か所以上で条件を満たしても、入るのは主な賃金を受け取る1か所だけです（65歳以上は、2か所を合わせて週20時間以上なら申し出て入れる制度があります）。2026年度の一般の事業の本人負担は0.5%です。
+              </p>
             </>
           )}
         </div>
@@ -276,44 +283,103 @@ function Lines({ rows }: { rows: [string, number, string?][] }) {
   )
 }
 
-function WagePanel({
-  input,
-  setInput,
-  monthlyPay,
-  bonusTotal,
-  annualPay,
-}: {
-  input: TakeHomeInput
-  setInput: (i: TakeHomeInput) => void
-  monthlyPay: number
-  bonusTotal: number
-  annualPay: number
-}) {
-  const setWage = (patch: Partial<TakeHomeInput['wage']>) => setInput({ ...input, wage: { ...input.wage, ...patch } })
-  const setSalary = (patch: Partial<TakeHomeInput['salary']>) => setInput({ ...input, salary: { ...input.salary, ...patch } })
-  const w = input.wage
-  const salary = input.payMode === 'salary'
+function WagePanel({ input, setInput, result }: { input: TakeHomeInput; setInput: (i: TakeHomeInput) => void; result: TakeHomeResult }) {
+  const setJob = (id: string, patch: Partial<Job>) => setInput({ ...input, jobs: input.jobs.map((j) => (j.id === id ? { ...j, ...patch } : j)) })
+  // 雇用保険はふつう1つの勤務先だけで入るので、1つを選ぶとほかは外す
+  const setEmployment = (id: string, on: boolean) =>
+    setInput({ ...input, jobs: input.jobs.map((j) => ({ ...j, employmentInsurance: j.id === id ? on : on ? false : j.employmentInsurance })) })
+  const several = input.jobs.length > 1
   return (
     <>
+      {input.jobs.map((job, i) => (
+        <JobCard
+          key={job.id}
+          job={job}
+          label={jobLabel(job, i)}
+          pay={result.jobs[i]}
+          onChange={(patch) => setJob(job.id, patch)}
+          onEmployment={(on) => setEmployment(job.id, on)}
+          onRemove={several ? () => setInput({ ...input, jobs: input.jobs.filter((j) => j.id !== job.id) }) : undefined}
+        />
+      ))}
+      <div className="row">
+        <button onClick={() => setInput({ ...input, jobs: addJob(input.jobs) })}>＋ 職を追加</button>
+        <label className="field push-right">
+          <span>税のルール</span>
+          <select value={input.year} onChange={(e) => setInput({ ...input, year: e.target.value as TaxYear })}>
+            {TAX_YEARS.map((y) => (
+              <option key={y.key} value={y.key}>
+                {y.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {several && (
+        <Lines
+          rows={[
+            ['月の給与の合計', result.monthlyPay],
+            ...(result.bonusTotal ? [['賞与の年額の合計', result.bonusTotal] as [string, number]] : []),
+            ['年収の合計', result.annualPay],
+          ]}
+        />
+      )}
+      <p className="muted small">
+        {several
+          ? '所得税・住民税はすべての職の給与を合算してかかり、給与所得控除も合算した額に1回だけ引きます。健康保険・厚生年金は、勤務先で入る職の報酬を合算して決めます。2か所以上から給与を受け取ると、確定申告が必要になることがあります。'
+          : '職を追加すると、掛け持ちの場合を計算できます。'}
+        通勤手当は含めないでください（一定額まで税がかからないため）。
+      </p>
+    </>
+  )
+}
+
+function JobCard({
+  job,
+  label,
+  pay,
+  onChange,
+  onEmployment,
+  onRemove,
+}: {
+  job: Job
+  label: string
+  pay: TakeHomeResult['jobs'][number]
+  onChange: (patch: Partial<Job>) => void
+  onEmployment: (on: boolean) => void
+  onRemove?: () => void
+}) {
+  const setWage = (patch: Partial<Job['wage']>) => onChange({ wage: { ...job.wage, ...patch } })
+  const setSalary = (patch: Partial<Job['salary']>) => onChange({ salary: { ...job.salary, ...patch } })
+  const w = job.wage
+  const salary = job.payMode === 'salary'
+  return (
+    <div className="job-card">
       <div className="editor-row">
+        <input className="job-name" value={job.name} placeholder={label} onChange={(e) => onChange({ name: e.target.value })} aria-label="職の名前" />
         {(
           [
-            ['hourly', '時給で計算（アルバイトなど）'],
+            ['hourly', '時給で計算'],
             ['salary', '月給と賞与で計算'],
           ] as const
-        ).map(([mode, label]) => (
+        ).map(([mode, text]) => (
           <label key={mode}>
-            <input type="radio" checked={input.payMode === mode} onChange={() => setInput({ ...input, payMode: mode })} />
-            {label}
+            <input type="radio" checked={job.payMode === mode} onChange={() => onChange({ payMode: mode })} />
+            {text}
           </label>
         ))}
+        {onRemove && (
+          <button className="push-right" onClick={onRemove}>
+            削除
+          </button>
+        )}
       </div>
       <div className="fields">
         {salary ? (
           <>
-            <NumberField label="月給（額面）" unit="円" step={10000} value={input.salary.monthly} onChange={(v) => setSalary({ monthly: v })} />
-            <NumberField label="賞与（1回あたりの額面）" unit="円" step={10000} value={input.salary.bonus} onChange={(v) => setSalary({ bonus: v })} />
-            <NumberField label="賞与の回数（年）" unit="回" step={1} value={input.salary.bonusTimes} onChange={(v) => setSalary({ bonusTimes: v })} />
+            <NumberField label="月給（額面）" unit="円" step={10000} value={job.salary.monthly} onChange={(v) => setSalary({ monthly: v })} />
+            <NumberField label="賞与（1回あたりの額面）" unit="円" step={10000} value={job.salary.bonus} onChange={(v) => setSalary({ bonus: v })} />
+            <NumberField label="賞与の回数（年）" unit="回" step={1} value={job.salary.bonusTimes} onChange={(v) => setSalary({ bonusTimes: v })} />
           </>
         ) : (
           <>
@@ -321,7 +387,7 @@ function WagePanel({
             <NumberField label="月の労働時間" unit="時間" step={1} value={w.hours} onChange={(v) => setWage({ hours: v })} />
             <NumberField label="うち深夜（22時〜5時）の時間" unit="時間" step={1} value={w.nightHours} onChange={(v) => setWage({ nightHours: v })} />
             <label className="field">
-              <span>深夜の時給</span>
+              <span>深夜の時給（空欄なら1.25倍）</span>
               <span>
                 <input
                   type="number"
@@ -335,31 +401,22 @@ function WagePanel({
             </label>
           </>
         )}
-        <label className="field">
-          <span>税のルール</span>
-          <select value={input.year} onChange={(e) => setInput({ ...input, year: e.target.value as TaxYear })}>
-            {TAX_YEARS.map((y) => (
-              <option key={y.key} value={y.key}>
-                {y.label}
-              </option>
-            ))}
-          </select>
+      </div>
+      <div className="editor-row">
+        <label>
+          <input type="checkbox" checked={job.socialInsurance} onChange={(e) => onChange({ socialInsurance: e.target.checked })} />
+          この勤務先の健康保険・厚生年金に入る
+        </label>
+        <label>
+          <input type="checkbox" checked={job.employmentInsurance} onChange={(e) => onEmployment(e.target.checked)} />
+          この勤務先で雇用保険に入る
         </label>
       </div>
-      <Lines
-        rows={[
-          [salary ? '月給（額面）' : '月の給与（額面）', monthlyPay],
-          ...(salary ? [['賞与（年額）', bonusTotal] as [string, number]] : []),
-          [salary ? '年収（月給 × 12 ＋ 賞与）' : '年収（× 12）', annualPay],
-        ]}
-      />
       <p className="muted small">
-        {salary
-          ? '月給は残業代などを含めた毎月の額面です。賞与にも社会保険料（標準賞与額にかかる）と雇用保険料がかかります。'
-          : '深夜の時給は、空欄なら時給の1.25倍（法定の割増の最低）で数えます。'}
-        通勤手当は含めないでください（一定額まで税がかからないため）。
+        月の給与 {yen(pay.monthly)}
+        {pay.bonusTotal ? `・賞与 ${yen(pay.bonusTotal)}（年）` : ''}・年収 {yen(pay.annual)}
       </p>
-    </>
+    </div>
   )
 }
 
@@ -368,13 +425,15 @@ function HealthPanel({
   set,
   setAge,
   include,
-  lines,
+  result,
+  insuredNames,
 }: {
   input: TakeHomeInput
   set: SetSection
   setAge: (age40to64: boolean) => void
   include: ReactNode
-  lines: { label: string; value: number; note?: string }[]
+  result: TakeHomeResult['health']
+  insuredNames: string
 }) {
   const h = input.health
   const setPart = (i: number | 'care', patch: Partial<NhiPart>) =>
@@ -386,8 +445,7 @@ function HealthPanel({
       <div className="editor-row">
         {(
           [
-            ['employee', '勤務先の健康保険'],
-            ['national', '国民健康保険'],
+            ['calc', '計算する'],
             ['manual', '金額を入れる'],
           ] as const
         ).map(([mode, label]) => (
@@ -402,19 +460,23 @@ function HealthPanel({
         </label>
       </div>
 
-      {h.mode === 'employee' && (
+      {result.scheme === 'employee' && (
         <>
+          <p className="scheme">勤務先の健康保険（{insuredNames}で加入）</p>
           <div className="fields">
             <NumberField label="健康保険料率（本人と勤務先の合計）" unit="%" step={0.01} value={h.employeeRate} onChange={(v) => set('health', { employeeRate: v })} />
             <NumberField label="子ども・子育て支援金率" unit="%" step={0.01} value={h.childRate} onChange={(v) => set('health', { childRate: v })} />
             {input.age40to64 && <NumberField label="介護保険料率" unit="%" step={0.01} value={h.careRate} onChange={(v) => set('health', { careRate: v })} />}
           </div>
-          <p className="muted small">協会けんぽの 2026年度の料率（全国平均9.9%、都道府県で違う）を初期値にしています。勤務先の健康保険組合なら、その料率に直してください。</p>
+          <p className="muted small">
+            協会けんぽの 2026年度の料率（全国平均9.9%、都道府県で違う）を初期値にしています。勤務先の健康保険組合なら、その料率に直してください。2か所以上で入るときは、報酬を合算して標準報酬月額を決め、本人が選んだ1つの健康保険の料率がかかります。
+          </p>
         </>
       )}
 
-      {h.mode === 'national' && (
+      {result.scheme === 'national' && (
         <>
+          <p className="scheme">国民健康保険（勤務先の健康保険に入る職が無いため）</p>
           <table className="nhi-parts">
             <thead>
               <tr>
@@ -451,7 +513,7 @@ function HealthPanel({
             </select>
           </label>
           <p className="muted small">
-            初期値は東京都中央区の 2026年度の料率（例）です。料率は市区町村ごとに違うので、お住まいの市区町村の値に直してください。前の年の所得で決まるので、2年目以降の額です。
+            初期値は東京都中央区の 2026年度の料率（例）です。料率は市区町村ごとに違うので、お住まいの市区町村の値に直してください。前の年の所得（すべての職の合計）で決まるので、2年目以降の額です。
           </p>
         </>
       )}
@@ -459,9 +521,11 @@ function HealthPanel({
       {h.mode === 'manual' ? (
         <NumberField label="健康保険料の年額" unit="円" step={1000} value={h.manualAnnual} onChange={(v) => set('health', { manualAnnual: v })} />
       ) : (
-        <Lines rows={lines.map((l) => [l.label, l.value, l.note])} />
+        <Lines rows={result.lines.map((l) => [l.label, l.value, l.note])} />
       )}
-      <p className="muted small">勤務先の健康保険に入るのは、おおむね週20時間以上・2か月を超える見込み・学生でない・勤務先が従業員51人以上の場合です（規模の条件は2027年10月から段階的に小さくなる予定）。</p>
+      <p className="muted small">
+        勤務先の健康保険に入るのは、おおむね週20時間以上・2か月を超える見込み・学生でない・勤務先が従業員51人以上の場合です（規模の条件は2027年10月から段階的に小さくなる予定）。条件は勤務先ごとに見るので、2か所の労働時間を合わせて20時間以上でも、どちらでも入らないことがあります。
+      </p>
     </>
   )
 }
