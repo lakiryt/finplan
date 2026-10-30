@@ -275,7 +275,8 @@ function RecordTable({ rows, sort, toggleSort, picked, toggle, outcomes, blocked
   const processed = (t: Transaction) => {
     const o = outcomes.get(t)
     if (!o || o.kind === 'keep') return ''
-    return o.kind === 'exclude' ? '除外' : `相殺 →「${o.target || '（空欄）'}」`
+    if (o.kind === 'exclude') return '除外'
+    return o.moved ? `相殺 →「${o.target || '（空欄）'}」` : `除外（差し引く先の「${o.target || '（空欄）'}」が除外のため）`
   }
   return (
     <div className="results-scroll">

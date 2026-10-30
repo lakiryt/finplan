@@ -199,7 +199,8 @@ export function processedAmounts(txs: Transaction[], config: ProcessingConfig): 
     const o = outcomeOf(t, config)
     if (o.kind === 'keep') continue
     const entry = result[side].get(t.category) ?? { excluded: 0, offset: 0 }
-    entry[o.kind === 'exclude' ? 'excluded' : 'offset'] += Math.abs(t.amount)
+    // 差し引く先が除外されて一緒に除かれた相殺は、反対側に残らないので、除外として数える
+    entry[o.kind === 'exclude' || !o.moved ? 'excluded' : 'offset'] += Math.abs(t.amount)
     result[side].set(t.category, entry)
   }
   return result

@@ -141,6 +141,57 @@ describe('records whose handling is already decided', () => {
   })
 })
 
+describe('overlapping rules', () => {
+  const total = (c: ProcessingConfig, side: 'income' | 'expense') => [...processedAmounts(txs, c)[side].values()]
+  const sum = (list: { excluded: number; offset: number }[], key: 'excluded' | 'offset') => list.reduce((s, a) => s + a[key], 0)
+  const broad = { when: { side: 'expense', category: '家賃' } } as const
+  const narrow = { when: { side: 'expense', memo: '泊' } } as const
+
+  it('counts a record hit by two exclusions once, in totals and in the balance', () => {
+    const one = config([broad])
+    const both = config([broad, narrow])
+    expect(rows(applyProcessing(txs, both))).toEqual(rows(applyProcessing(txs, one)))
+    expect(sum(total(both, 'expense'), 'excluded')).toBe(68_000)
+  })
+
+  it('keeps the same result in either order, and the other rule takes over when one is turned off', () => {
+    const both = config([broad, narrow])
+    expect(rows(applyProcessing(txs, { ...both, rules: [...both.rules].reverse() }))).toEqual(rows(applyProcessing(txs, both)))
+    const broadOff = { ...both, rules: both.rules.map((r) => (r.id === 'e0' ? { ...r, enabled: false } : r)) }
+    expect(sum(total(broadOff, 'expense'), 'excluded')).toBe(8_000)
+    expect(byMemo(applyProcessing(txs, broadOff), '家賃')).toBeDefined()
+  })
+
+  it('lets one offset win inside a wholly excluded category, and excludes the rest', () => {
+    const c = config([broad], [{ when: { side: 'expense', memo: '泊' }, target: '給与' }])
+    expect(total(c, 'expense')).toEqual([{ excluded: 60_000, offset: 8_000 }])
+    // 収支が変わるのは除外した分だけ（支出を除くので 60,000 増える）
+    expect(balance(applyProcessing(txs, c))).toBe(balance(txs) + 60_000)
+  })
+
+  it('follows the exclusion dynamically: an offset into a category that gets excluded later works like an exclusion', () => {
+    const offset = { when: { side: 'income', category: '回収' }, target: '貯蓄' } as const
+    const c = config([{ when: { side: 'expense', category: '貯蓄' } }], [offset])
+    expect(balance(applyProcessing(txs, c))).toBe(balance(txs) + 50_000 - 500)
+    // 除外の区分を切ると、相殺に戻る
+    const off = { ...c, enabled: { ...c.enabled, expense: { offset: true, exclude: false } } }
+    expect(balance(applyProcessing(txs, off))).toBe(balance(txs))
+  })
+
+  it('reports amounts that explain the balance: balance after = before − excluded income + excluded expense', () => {
+    const cases = [
+      config([broad, narrow]),
+      config([broad], [{ when: { side: 'expense', memo: '泊' }, target: '給与' }]),
+      config([{ when: { side: 'expense', category: '貯蓄' } }], [{ when: { side: 'income', category: '回収' }, target: '貯蓄' }]),
+      config([{ when: { side: 'income', category: '回収' } }], [{ when: { side: 'income', category: '回収' }, target: '食費' }]),
+    ]
+    for (const c of cases) {
+      const after = balance(applyProcessing(txs, c))
+      expect(after).toBe(balance(txs) - sum(total(c, 'income'), 'excluded') + sum(total(c, 'expense'), 'excluded'))
+    }
+  })
+})
+
 describe('summaries and parsing', () => {
   it('lists categories excluded as a whole (offsetting into them would equal excluding)', () => {
     const c = config([{ when: { side: 'expense', category: '貯蓄' } }, { when: { side: 'expense', category: '家賃', memo: '泊' } }])
