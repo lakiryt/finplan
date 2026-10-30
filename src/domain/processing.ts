@@ -168,6 +168,14 @@ export function applyProcessing(txs: Transaction[], config: ProcessingConfig): T
 }
 
 /**
+ * すでにほかの条件で扱いが決まっている記録に、kind の条件を足しても何も変わらないか。
+ * 相殺済みの記録はどちらの条件を足しても変わらず（先の相殺が優先）、除外済みの記録は除外を足しても変わらない。
+ * 除外済みの記録に相殺を足すのは意味がある（相殺が除外より優先）。
+ * outcome は、編集中の条件を除いた設定で求めたものを渡す
+ */
+export const addsNothing = (outcome: Outcome, kind: Kind) => outcome.kind === 'offset' || (outcome.kind === 'exclude' && kind === 'exclude')
+
+/**
  * その側で、カテゴリー全体を除外しているカテゴリー（カテゴリーだけを指定した除外の条件）。
  * ここへ差し引く相殺は、相殺した分も一緒に除かれ、その記録を除外するのと同じになるので、差し引く先に選べないようにする。
  * メモや期間で一部だけを除外しているカテゴリーは、差し引いた記録が残ることがあるので含めない

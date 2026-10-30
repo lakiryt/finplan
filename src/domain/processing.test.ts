@@ -4,6 +4,7 @@ import {
   applyProcessing,
   defaultProcessing,
   activeRules,
+  addsNothing,
   hasCriteria,
   isProcessed,
   whollyExcluded,
@@ -120,6 +121,23 @@ describe('offset', () => {
     expect(outcomeOf(byMemo(txs, '割り勘 半額')!, { ...both, rules: [...both.rules].reverse() }).kind).toBe('offset')
     const intoExcluded = config([{ when: { side: 'expense', category: '貯蓄' } }], [{ when: { side: 'income', category: '回収' }, target: '貯蓄' }])
     expect(byMemo(applyProcessing(txs, intoExcluded), '割り勘 半額')).toBeUndefined()
+  })
+})
+
+describe('records whose handling is already decided', () => {
+  const rent = byMemo(txs, 'ホテル2泊')!
+  const excluded = config([{ when: { side: 'expense', category: '家賃' } }])
+  const offset = config([], [{ when: { side: 'expense', category: '家賃' }, target: '給与' }])
+
+  it('adds nothing to exclude an excluded record, but offsetting it takes effect', () => {
+    expect(addsNothing(outcomeOf(rent, excluded), 'exclude')).toBe(true)
+    expect(addsNothing(outcomeOf(rent, excluded), 'offset')).toBe(false)
+  })
+
+  it('adds nothing to an offset record, and free records can take either', () => {
+    expect(addsNothing(outcomeOf(rent, offset), 'exclude')).toBe(true)
+    expect(addsNothing(outcomeOf(rent, offset), 'offset')).toBe(true)
+    expect(addsNothing(outcomeOf(rent, config()), 'exclude')).toBe(false)
   })
 })
 

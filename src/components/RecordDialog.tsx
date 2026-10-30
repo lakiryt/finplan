@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { hasCriteria, matches, opposite, outcomeOf, recordKey, UNASSIGNED_OFFSET, whollyExcluded, type Condition, type ProcessingConfig, type Target } from '../domain/processing'
+import { addsNothing, hasCriteria, kindOf, matches, opposite, outcomeOf, recordKey, UNASSIGNED_OFFSET, whollyExcluded, type Condition, type ProcessingConfig, type Target } from '../domain/processing'
 import { txSide, type Side } from '../domain/raw'
 import type { Transaction } from '../domain/types'
 import { yen } from './format'
@@ -108,7 +108,11 @@ function RecordEditor({
   const result: Condition = picked.length > 0 ? { side: c.side, records: picked } : c
   const excluded = whollyExcluded(processing, other)
   const outcomes = useMemo(() => new Map(transactions.map((t) => [t, outcomeOf(t, processing)])), [transactions, processing])
-  const table = { sort, toggleSort, picked: pickedSet, toggle, outcomes }
+  // 編集中の条件を除いた今の加工で扱いが決まっていて、この条件を足しても変わらない記録は選べない
+  const others = useMemo(() => ({ ...processing, rules: processing.rules.filter((r) => r.id !== id) }), [processing, id])
+  const kind = kindOf(draft)
+  const blocked = (t: Transaction) => addsNothing(outcomeOf(t, others), kind)
+  const table = { sort, toggleSort, picked: pickedSet, toggle, outcomes, blocked }
 
   return (
     <div className="record-editor">
@@ -258,12 +262,16 @@ interface TableProps {
   picked: Set<string>
   toggle: (keys: string[], on: boolean) => void
   outcomes: Map<Transaction, ReturnType<typeof outcomeOf>>
+  /** この条件を足しても変わらない記録か（選べない。すでに選んでいれば外せる） */
+  blocked: (t: Transaction) => boolean
 }
 
 /** 記録の一覧。行を押すと選ぶ・外す（見出しのチェックは、一覧にある記録をまとめて選ぶ・外す）。右端に今の加工で起きていることを出す */
-function RecordTable({ rows, sort, toggleSort, picked, toggle, outcomes }: TableProps) {
+function RecordTable({ rows, sort, toggleSort, picked, toggle, outcomes, blocked }: TableProps) {
   const keys = rows.map(recordKey)
-  const all = keys.every((k) => picked.has(k))
+  const locked = rows.map((t, i) => blocked(t) && !picked.has(keys[i]))
+  const selectable = keys.filter((_, i) => !locked[i])
+  const all = selectable.length > 0 && selectable.every((k) => picked.has(k))
   const processed = (t: Transaction) => {
     const o = outcomes.get(t)
     if (!o || o.kind === 'keep') return ''
@@ -275,7 +283,13 @@ function RecordTable({ rows, sort, toggleSort, picked, toggle, outcomes }: Table
         <thead>
           <tr>
             <th>
-              <input type="checkbox" checked={all} onChange={() => toggle(keys, !all)} title={all ? '一覧の記録をすべて外す' : '一覧の記録をすべて選ぶ'} />
+              <input
+                type="checkbox"
+                checked={all}
+                disabled={!selectable.length}
+                onChange={() => toggle(selectable, !all)}
+                title={all ? '一覧の記録をすべて外す' : '一覧の選べる記録をすべて選ぶ'}
+              />
             </th>
             {COLUMNS.map((col) => (
               <th key={col.key} className={col.num ? 'num' : undefined} aria-sort={sort.key === col.key ? (sort.desc ? 'descending' : 'ascending') : 'none'}>
@@ -290,9 +304,14 @@ function RecordTable({ rows, sort, toggleSort, picked, toggle, outcomes }: Table
         </thead>
         <tbody>
           {rows.map((t, i) => (
-            <tr key={t.id} className={picked.has(keys[i]) ? 'picked-row' : undefined} onClick={() => toggle([keys[i]], !picked.has(keys[i]))}>
+            <tr
+              key={t.id}
+              className={picked.has(keys[i]) ? 'picked-row' : locked[i] ? 'locked-row' : undefined}
+              title={locked[i] ? 'すでにほかの条件で加工されているので、この条件を足しても変わりません' : undefined}
+              onClick={() => !locked[i] && toggle([keys[i]], !picked.has(keys[i]))}
+            >
               <td>
-                <input type="checkbox" checked={picked.has(keys[i])} readOnly />
+                <input type="checkbox" checked={picked.has(keys[i])} disabled={locked[i]} readOnly />
               </td>
               <td className="num">{t.date}</td>
               <td className="num">{yen(t.amount)}</td>
