@@ -308,8 +308,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 .segmented button { border: none; border-radius: 0; background: none; padding: 4px 14px; }
 .segmented button.active { background: var(--accent); color: #fff; font-weight: 600; }
 .rule-preview .badge-rule { cursor: default; }
-.rule-name { flex: 1; min-width: 12em; }
-.rule-name input { flex: 1; min-width: 0; }
+.rule-title { width: 100%; padding: 2px 0; font-size: 1.15rem; font-weight: 600; background: none; border: none; border-bottom: 1px solid var(--line); border-radius: 0; }
+.rule-title:hover, .rule-title:focus { border-bottom-color: var(--accent); outline: none; }
 .record-results .picked-row td { background: color-mix(in oklch, var(--accent) 12%, transparent); }
 .record-results .picked { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .record-results .picked .results-scroll { max-height: 25vh; }

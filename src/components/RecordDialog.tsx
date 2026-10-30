@@ -117,7 +117,14 @@ function RecordEditor({
 
   return (
     <div className="record-editor">
-      <h3>{id ? '条件の編集' : '条件の追加'}</h3>
+      {/* 名前はこの画面のタイトルなので、見出しの位置で直接書き換える。空なら条件の内容がそのまま名前の代わりになる */}
+      <input
+        className="rule-title"
+        aria-label="条件の名前"
+        value={draft.name ?? ''}
+        placeholder={describeRule({ ...draft, when })}
+        onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+      />
       <Segmented
         value={c.side}
         options={[
@@ -219,10 +226,6 @@ function RecordEditor({
                 </option>
               ))}
             </select>
-          </label>
-          <label className="rule-name">
-            名前
-            <input value={draft.name ?? ''} placeholder={describeRule({ ...draft, when })} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
           </label>
         </div>
         {/* 保存される内容。文章で説明する代わりに、3. に並ぶバッジと同じものを見せる */}
