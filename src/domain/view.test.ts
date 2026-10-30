@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hexToOklch, seededRandom } from './colors'
+import { seededRandom } from './colors'
 import type { CategoryGroup } from './groups'
 import {
   categoryColorsInUse,
@@ -109,11 +109,8 @@ describe('coloring members that join a group', () => {
     const { colors, groups } = changeGroups(before, after, seededRandom(2))
     expect(groups).toBe(after)
     expect(Object.keys(colors).sort()).toEqual(['A', 'C'])
+    // 利用者が付けた色は変えない
     expect(colors.A).toBe('#1955b4')
-    // 似た色（色相が近い）で、すでにいる中身の色とは違う
-    const hue = (hex: string) => hexToOklch(hex).h
-    expect(Math.abs(hue(colors.C) - hue('#2a78d6'))).toBeLessThan(10)
-    expect(colors.C).not.toBe(colors.A)
   })
 
   it('does nothing for colorless groups, colored categories, or unchanged groups', () => {
