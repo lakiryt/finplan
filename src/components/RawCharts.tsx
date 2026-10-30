@@ -55,6 +55,7 @@ interface Props {
  */
 export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, bars, mean, median, theme, side, onShowMonth }: Props) {
   const averages = <AverageLines mean={mean} median={median} theme={theme} />
+  const openMonth = (month: string) => onShowMonth(side, month)
 
   if (bars.kind === 'balance') {
     // 2色＋0の線で、プラスとマイナスが逆の意味だと分かるようにする
@@ -62,7 +63,7 @@ export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, b
     const last = bars.data[bars.data.length - 1]
     return (
       <div className="charts balance">
-        <MonthBarChart title={barTitle} data={bars.data} detail={(p) => <BalanceDetail {...p} onShow={onShowMonth} />} theme={theme}>
+        <MonthBarChart title={barTitle} data={bars.data} detail={(p) => <BalanceDetail {...p} onShow={onShowMonth} />} onOpen={openMonth} theme={theme}>
           <Bar dataKey="balance" name="収支" maxBarSize={28} isAnimationActive={false}>
             {bars.data.map((d) => (
               <Cell key={d.month} fill={signColor(d.balance)} />
@@ -71,7 +72,7 @@ export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, b
           <ReferenceLine y={0} stroke={theme.axis} />
           {averages}
         </MonthBarChart>
-        <MonthBarChart title={`累積収支（期間末 ${yen(last?.cumulative ?? 0)}）`} data={bars.data} detail={CumulativeDetail} theme={theme}>
+        <MonthBarChart title={`累積収支（期間末 ${yen(last?.cumulative ?? 0)}）`} data={bars.data} detail={CumulativeDetail} onOpen={openMonth} theme={theme}>
           <Bar dataKey="cumulative" name="累積収支" maxBarSize={28} isAnimationActive={false}>
             {bars.data.map((d) => (
               <Cell key={d.month} fill={signColor(d.cumulative)} />
@@ -98,7 +99,7 @@ export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, b
           surface={theme.surface}
         />
       </div>
-      <MonthBarChart title={barTitle} data={bars.data} detail={(p) => <MonthDetail {...p} onShow={(month) => onShowMonth(side, month)} />} theme={theme}>
+      <MonthBarChart title={barTitle} data={bars.data} detail={(p) => <MonthDetail {...p} onShow={openMonth} />} onOpen={openMonth} theme={theme}>
         {series.map((s, i) => (
           <Bar
             key={s.key}
@@ -121,18 +122,21 @@ export const RawCharts = memo(function RawCharts({ pieTitle, series, barTitle, b
 })
 
 /**
- * 月ごとの棒グラフの枠。棒を押すと詳細が出て、同じ棒をもう一度押す・グラフの外を押す・Esc で閉じる
+ * 月ごとの棒グラフの枠。棒を押すと詳細が出て、同じ棒をもう一度押す・グラフの外を押す・Esc で閉じる。
+ * ダブルクリックすると、その月の記録を開く
  */
 function MonthBarChart({
   title,
   data,
   detail,
+  onOpen,
   theme,
   children,
 }: {
   title: string
   data: Record<string, unknown>[]
   detail: (props: TooltipContentProps) => ReactNode
+  onOpen: (month: string) => void
   theme: Theme
   children: ReactNode
 }) {
@@ -164,6 +168,10 @@ function MonthBarChart({
           onClick={({ activeTooltipIndex }) => {
             const key = activeTooltipIndex === undefined || activeTooltipIndex === null ? null : String(activeTooltipIndex)
             setSelected((cur) => (key === null || cur === key ? null : key))
+          }}
+          onDoubleClick={({ activeTooltipIndex }) => {
+            const row = activeTooltipIndex === undefined || activeTooltipIndex === null ? undefined : data[Number(activeTooltipIndex)]
+            if (row) onOpen(String(row.month))
           }}
         >
           <CartesianGrid vertical={false} stroke={theme.grid} />
