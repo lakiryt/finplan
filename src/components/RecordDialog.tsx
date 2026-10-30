@@ -117,14 +117,28 @@ function RecordEditor({
 
   return (
     <div className="record-editor">
-      {/* 名前はこの画面のタイトルなので、見出しの位置で直接書き換える。空なら条件の内容がそのまま名前の代わりになる */}
-      <input
-        className="rule-title"
-        aria-label="条件の名前"
-        value={draft.name ?? ''}
-        placeholder={describeRule({ ...draft, when })}
-        onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-      />
+      {/* 3. に並ぶバッジをそのまま大きくして、この画面のタイトルにする。名前はここで直接書き換える */}
+      <div className="rule-header">
+        <label className="rule-title" title={describeRule({ ...draft, when })}>
+          <input
+            aria-label="条件の名前"
+            size={Math.max(12, ruleLabel({ ...draft, when }).length * 2 + 1)}
+            value={draft.name ?? ''}
+            placeholder={describeRule({ ...draft, when })}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+          />
+          <PencilIcon />
+        </label>
+        <span>{sectionTitle(c.side, kind)}</span>
+        <span>
+          {effect.count}件・{yen(effect.total)}
+        </span>
+        {effect.changedCount < effect.count && (
+          <span className="muted small">
+            （変わるのは {effect.changedCount}件・{yen(effect.changedTotal)}）
+          </span>
+        )}
+      </div>
       <Segmented
         value={c.side}
         options={[
@@ -228,21 +242,6 @@ function RecordEditor({
             </select>
           </label>
         </div>
-        {/* 保存される内容。文章で説明する代わりに、3. のどの区分に、どのバッジが並ぶかをそのまま見せる */}
-        <div className="editor-row rule-preview">
-          <span className="small">{sectionTitle(c.side, kind)}</span>
-          <span className="badge-rule" title={describeRule({ ...draft, when })}>
-            {ruleLabel({ ...draft, when })}
-          </span>
-          <span className="small">
-            {effect.count}件・{yen(effect.total)}
-          </span>
-          {effect.changedCount < effect.count && (
-            <span className="muted small">
-              （変わるのは {effect.changedCount}件・{yen(effect.changedTotal)}）
-            </span>
-          )}
-        </div>
         <div className="editor-row">
           <button
             disabled={!hasCriteria(when)}
@@ -273,6 +272,14 @@ function RecordEditor({
         </div>
       </div>
     </div>
+  )
+}
+
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2.5 13.5 3 10.5 10.5 3 13 5.5 5.5 13 2.5 13.5Z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
   )
 }
 
