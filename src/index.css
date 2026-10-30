@@ -229,6 +229,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 .chart-detail-head { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
 .chart-detail-row { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; }
 .chart-detail-swatch { width: 10px; height: 10px; border-radius: 2px; }
+.chart-detail-top { position: sticky; top: -8px; margin: -8px -10px 4px; padding: 8px 10px 6px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.chart-detail-top .chart-detail-head { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 .chart-detail-link { display: block; width: 100%; margin-top: 6px; font-size: 0.8rem; padding: 2px 8px; }
 .chart-detail-actions { display: flex; gap: 6px; }
 .chart-detail-actions .chart-detail-link { width: auto; flex: 1; }

@@ -208,13 +208,16 @@ function MonthDetail({ active, payload, label, onShow }: TooltipContentProps & {
   const total = Number(payload[0].payload.total ?? 0)
   return (
     <div className="chart-detail">
-      <DetailHead label={label} value={total} />
+      {/* 内訳が長いと小窓の中でスクロールするので、ボタンは上に固定して隠れないようにする */}
+      <div className="chart-detail-top">
+        <DetailHead label={label} value={total} />
+        <ShowRecords onClick={() => onShow(String(label))}>この月の記録を見る</ShowRecords>
+      </div>
       {payload
         .filter((p) => Number(p.value) !== 0)
         .map((p) => (
           <DetailRow key={String(p.dataKey)} color={p.color} name={String(p.name)} value={Number(p.value)} />
         ))}
-      <ShowRecords onClick={() => onShow(String(label))}>この月の記録を見る</ShowRecords>
     </div>
   )
 }
