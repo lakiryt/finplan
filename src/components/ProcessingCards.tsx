@@ -3,7 +3,7 @@ import { hasCriteria, KINDS, kindOf, type Kind, type ProcessingConfig, type Rule
 import type { Side } from '../domain/raw'
 import { InfoTip } from './InfoTip'
 import { ExcludeInfo, OffsetInfo } from './ProcessingInfo'
-import { describeRule, KIND_LABEL, ruleLabel, SIDE_LABEL, type RecordsRequest, type RuleDraft } from './ruleText'
+import { describeRule, KIND_LABEL, ruleLabel, sectionTitle, type RecordsRequest, type RuleDraft } from './ruleText'
 
 interface Props {
   config: ProcessingConfig
@@ -39,7 +39,7 @@ export function ProcessingCards({ config, onChange, onOpen }: Props) {
             const rules = config.rules.filter((r) => r.when.side === side && kindOf(r) === kind)
             const enabled = config.enabled[side][kind]
             const active = rules.filter((r) => r.enabled && hasCriteria(r.when)).length
-            const title = `${SIDE_LABEL[side]}側からの${KIND_LABEL[kind]}`
+            const title = sectionTitle(side, kind)
             return (
               <div key={`${side}-${kind}`} className={`card step ${enabled ? '' : 'off'}`}>
                 <div className="card-head">

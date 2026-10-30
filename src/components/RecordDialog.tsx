@@ -3,7 +3,7 @@ import { hasCriteria, isLocked, kindOf, matches, opposite, outcomeOf, recordKey,
 import { txSide, type Side } from '../domain/raw'
 import type { Transaction } from '../domain/types'
 import { yen } from './format'
-import { describeRule, KIND_LABEL, ruleLabel, SIDE_LABEL, type RecordsRequest, type RuleDraft } from './ruleText'
+import { describeRule, ruleLabel, sectionTitle, SIDE_LABEL, type RecordsRequest, type RuleDraft } from './ruleText'
 
 const ANY = '__any__'
 /**
@@ -228,10 +228,11 @@ function RecordEditor({
             </select>
           </label>
         </div>
-        {/* 保存される内容。文章で説明する代わりに、3. に並ぶバッジと同じものを見せる */}
+        {/* 保存される内容。文章で説明する代わりに、3. のどの区分に、どのバッジが並ぶかをそのまま見せる */}
         <div className="editor-row rule-preview">
-          <span className="badge-rule">
-            {KIND_LABEL[kind]}｜{SIDE_LABEL[c.side]}｜{ruleLabel({ ...draft, when })}
+          <span className="small">{sectionTitle(c.side, kind)}</span>
+          <span className="badge-rule" title={describeRule({ ...draft, when })}>
+            {ruleLabel({ ...draft, when })}
           </span>
           <span className="small">
             {effect.count}件・{yen(effect.total)}

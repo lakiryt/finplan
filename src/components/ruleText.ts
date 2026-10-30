@@ -4,6 +4,9 @@ import type { Side } from '../domain/raw'
 export const SIDE_LABEL: Record<Side, string> = { income: '収入', expense: '支出' }
 export const KIND_LABEL: Record<Kind, string> = { offset: '相殺', exclude: '除外' }
 
+/** 3. の区分の見出し。例: 「支出側からの除外」 */
+export const sectionTitle = (side: Side, kind: Kind) => `${SIDE_LABEL[side]}側からの${KIND_LABEL[kind]}`
+
 /** 編集中の条件。target は相殺で差し引く反対側の先（null なら差し引かない＝除外） */
 export interface RuleDraft {
   name?: string
