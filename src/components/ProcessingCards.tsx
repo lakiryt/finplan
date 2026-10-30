@@ -3,7 +3,7 @@ import { hasCriteria, KINDS, kindOf, type Kind, type ProcessingConfig, type Rule
 import type { Side } from '../domain/raw'
 import { InfoTip } from './InfoTip'
 import { ExcludeInfo, OffsetInfo } from './ProcessingInfo'
-import { describeRule, KIND_LABEL, SIDE_LABEL, type RecordsRequest, type RuleDraft } from './ruleText'
+import { describeRule, KIND_LABEL, ruleLabel, SIDE_LABEL, type RecordsRequest, type RuleDraft } from './ruleText'
 
 interface Props {
   config: ProcessingConfig
@@ -20,7 +20,7 @@ const EXAMPLES: Record<Side, Record<Kind, string>> = {
   income: { offset: '例: 割り勘の回収・返金を、立て替えた支出から差し引く', exclude: '例: 貯金・証券口座からの引き出し' },
 }
 
-const draftOf = (r: Rule): RuleDraft => ({ enabled: r.enabled, when: r.when, target: r.target })
+const draftOf = (r: Rule): RuleDraft => ({ name: r.name, enabled: r.enabled, when: r.when, target: r.target })
 
 /**
  * 3. の加工。条件は1種類で、反対側から差し引く先を選べば相殺、選ばなければ除外になる。
@@ -64,9 +64,9 @@ export function ProcessingCards({ config, onChange, onOpen }: Props) {
                         key={r.id}
                         className={`badge-rule ${r.enabled && hasCriteria(r.when) ? '' : 'off'}`}
                         onClick={() => onOpen({ draft: draftOf(r), id: r.id })}
-                        title={r.enabled ? '押すと編集できます' : '無効の条件（押すと編集できます）'}
+                        title={describeRule(draftOf(r))}
                       >
-                        {describeRule(draftOf(r))}
+                        {ruleLabel(draftOf(r))}
                       </button>
                     ))}
                   </div>

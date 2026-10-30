@@ -6,6 +6,7 @@ export const KIND_LABEL: Record<Kind, string> = { offset: '相殺', exclude: '�
 
 /** 編集中の条件。target は相殺で差し引く反対側の先（null なら差し引かない＝除外） */
 export interface RuleDraft {
+  name?: string
   enabled: boolean
   when: Condition
   target: Target | null
@@ -33,3 +34,6 @@ export function describeRule(rule: RuleDraft): string {
   const cat = rule.target.category
   return `${text} → ${cat === null ? '指定なし' : `「${cat || '（空欄）'}」`}`
 }
+
+/** バッジの文字。名前があれば名前、無ければ条件の内容 */
+export const ruleLabel = (rule: RuleDraft) => rule.name || describeRule(rule)

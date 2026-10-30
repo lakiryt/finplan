@@ -274,6 +274,9 @@ describe('summaries and parsing', () => {
     const targets = config([], [{ when: { side: 'income', category: '回収' }, target: null }, { when: { side: 'income', category: '回収' }, target: '' }])
     expect(parseProcessingConfig(JSON.parse(JSON.stringify(targets)))).toEqual(targets)
     expect(() => parseProcessingConfig({ version: 3, rules: [{ id: 'a', when: { side: 'x' } }] })).toThrow()
+    // 名前はあれば残し、無ければ項目ごと無い
+    const named = { version: 3, rules: [{ id: 'a', name: '家賃以外', enabled: true, when: { side: 'expense', category: '貯蓄' } }, { id: 'b', name: '', enabled: true, when: { side: 'expense', category: '貯蓄' } }] }
+    expect(parseProcessingConfig(named).rules.map((r) => r.name)).toEqual(['家賃以外', undefined])
     expect(() => parseProcessingConfig({ version: 2, exclude: { rules: [] }, offset: { rules: [] } })).toThrow()
   })
 })

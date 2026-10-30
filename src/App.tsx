@@ -64,7 +64,8 @@ export default function App() {
     [],
   )
   const saveRule = (d: RuleDraft, id?: string) => {
-    const rule = { id: id ?? crypto.randomUUID(), enabled: d.enabled, when: d.when, target: d.target }
+    const name = d.name?.trim()
+    const rule = { id: id ?? crypto.randomUUID(), ...(name && { name }), enabled: d.enabled, when: d.when, target: d.target }
     setProcessing({ ...processing, rules: id ? processing.rules.map((r) => (r.id === id ? rule : r)) : [...processing.rules, rule] })
   }
 

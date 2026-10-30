@@ -40,6 +40,8 @@ export interface Target {
  */
 export interface Rule {
   id: string
+  /** バッジに出す名前（無ければ条件の内容を出す） */
+  name?: string
   enabled: boolean
   when: Condition
   target: Target | null
@@ -92,7 +94,9 @@ function parseTarget(raw: unknown): Target | null {
 function parseRule(raw: unknown): Rule {
   const r = raw as Record<string, unknown> | null
   if (!r) throw new Error('条件の形式が正しくありません')
-  return { id: String(r.id), enabled: Boolean(r.enabled), when: parseCondition(r.when), target: parseTarget(r.target) }
+  const rule: Rule = { id: String(r.id), enabled: Boolean(r.enabled), when: parseCondition(r.when), target: parseTarget(r.target) }
+  if (str(r.name)) rule.name = r.name as string
+  return rule
 }
 
 export function parseProcessingConfig(raw: unknown): ProcessingConfig {

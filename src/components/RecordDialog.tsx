@@ -3,7 +3,7 @@ import { hasCriteria, isLocked, kindOf, matches, opposite, outcomeOf, recordKey,
 import { txSide, type Side } from '../domain/raw'
 import type { Transaction } from '../domain/types'
 import { yen } from './format'
-import { describeRule, KIND_LABEL, SIDE_LABEL, type RecordsRequest, type RuleDraft } from './ruleText'
+import { describeRule, KIND_LABEL, ruleLabel, SIDE_LABEL, type RecordsRequest, type RuleDraft } from './ruleText'
 
 const ANY = '__any__'
 /**
@@ -206,23 +206,29 @@ function RecordEditor({
       </div>
 
       <div className="record-footer">
-        <label className="editor-row">
-          {SIDE_LABEL[other]}から
-          <select value={targetValue(draft.target)} onChange={(e) => setDraft({ ...draft, target: parseTargetValue(e.target.value) })}>
-            <option value={NO_TARGET}>差し引かない（除外）</option>
-            <option value={UNASSIGNED}>カテゴリーを指定せずに差し引く（相殺）</option>
-            {categories[other].map((cat) => (
-              // カテゴリー全体を除外している先へ差し引くと、除外と同じになるので選べない
-              <option key={cat} value={targetValue({ category: cat })} disabled={excluded.has(cat)}>
-                「{cat || '（空欄）'}」{excluded.has(cat) ? '（除外中）' : 'から差し引く（相殺）'}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="editor-row">
+          <label>
+            {SIDE_LABEL[other]}から
+            <select value={targetValue(draft.target)} onChange={(e) => setDraft({ ...draft, target: parseTargetValue(e.target.value) })}>
+              <option value={NO_TARGET}>差し引かない（除外）</option>
+              <option value={UNASSIGNED}>カテゴリーを指定せずに差し引く（相殺）</option>
+              {categories[other].map((cat) => (
+                // カテゴリー全体を除外している先へ差し引くと、除外と同じになるので選べない
+                <option key={cat} value={targetValue({ category: cat })} disabled={excluded.has(cat)}>
+                  「{cat || '（空欄）'}」{excluded.has(cat) ? '（除外中）' : 'から差し引く（相殺）'}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="rule-name">
+            名前
+            <input value={draft.name ?? ''} placeholder={describeRule({ ...draft, when })} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+          </label>
+        </div>
         {/* 保存される内容。文章で説明する代わりに、3. に並ぶバッジと同じものを見せる */}
         <div className="editor-row rule-preview">
           <span className="badge-rule">
-            {KIND_LABEL[kind]}｜{SIDE_LABEL[c.side]}｜{describeRule({ ...draft, when })}
+            {KIND_LABEL[kind]}｜{SIDE_LABEL[c.side]}｜{ruleLabel({ ...draft, when })}
           </span>
           <span className="small">
             {effect.count}件・{yen(effect.total)}
