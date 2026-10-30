@@ -176,6 +176,45 @@ export function applyProcessing(txs: Transaction[], config: ProcessingConfig): T
 export const addsNothing = (outcome: Outcome, kind: Kind) => outcome.kind === 'offset' || (outcome.kind === 'exclude' && kind === 'exclude')
 
 /**
+ * 編集中の条件（id。新しい条件なら無し）より優先される条件だけを残した設定。
+ * 自身は除き、相殺なら後ろの相殺も除く（相殺は先に足した条件が優先）。除外は相殺に負けるので、相殺はすべて残す
+ */
+export function rulesAhead(config: ProcessingConfig, kind: Kind, id?: string): ProcessingConfig {
+  const at = config.rules.findIndex((r) => r.id === id)
+  const rules = config.rules.filter((r, i) => r.id !== id && !(kind === 'offset' && at >= 0 && i > at && kindOf(r) === 'offset'))
+  return { ...config, rules }
+}
+
+/** 条件を足しても変わらない記録か（一覧で選べない） */
+export function isLocked(tx: Transaction, config: ProcessingConfig, kind: Kind, id?: string): boolean {
+  return addsNothing(outcomeOf(tx, rulesAhead(config, kind, id)), kind)
+}
+
+export interface RuleEffect {
+  /** 条件に当たる記録の件数と金額（金額は大きさの合計） */
+  count: number
+  total: number
+  /** そのうち、この条件で実際に扱いが変わる分 */
+  changedCount: number
+  changedTotal: number
+}
+
+/** 条件を保存すると、どれだけの記録に当たり、どれだけ実際に変わるか */
+export function ruleEffect(txs: Transaction[], config: ProcessingConfig, when: Condition, kind: Kind, id?: string): RuleEffect {
+  const ahead = rulesAhead(config, kind, id)
+  const effect: RuleEffect = { count: 0, total: 0, changedCount: 0, changedTotal: 0 }
+  for (const t of txs) {
+    if (!matches(when, t)) continue
+    effect.count++
+    effect.total += Math.abs(t.amount)
+    if (addsNothing(outcomeOf(t, ahead), kind)) continue
+    effect.changedCount++
+    effect.changedTotal += Math.abs(t.amount)
+  }
+  return effect
+}
+
+/**
  * その側で、カテゴリー全体を除外しているカテゴリー（カテゴリーだけを指定した除外の条件）。
  * ここへ差し引く相殺は、相殺した分も一緒に除かれ、その記録を除外するのと同じになるので、差し引く先に選べないようにする。
  * メモや期間で一部だけを除外しているカテゴリーは、差し引いた記録が残ることがあるので含めない

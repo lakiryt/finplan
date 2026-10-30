@@ -292,7 +292,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .record-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 .record-editor { display: grid; gap: 8px; padding: 14px 18px; font-size: 0.9rem; }
 .record-editor h3 { margin: 0; }
-.record-footer { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+.record-footer { position: sticky; bottom: 0; display: grid; gap: 6px; border-top: 1px solid var(--line); padding: 8px 0 14px; background: var(--surface); }
 .record-footer p { margin: 0; }
 .record-results { border-top: 1px solid var(--line); padding-top: 8px; }
 .record-results p { margin: 0 0 6px; }
@@ -300,10 +300,14 @@ button:disabled { opacity: 0.4; cursor: default; }
 .results-scroll table { display: table; width: 100%; }
 .results-memo { white-space: normal; }
 .record-results button.pin { font-size: 0.8rem; padding: 1px 8px; white-space: nowrap; }
-.record-results tbody tr { cursor: pointer; }
-.record-results tbody tr:hover td { background: color-mix(in oklch, var(--accent) 5%, transparent); }
-.record-results tbody tr.locked-row { cursor: not-allowed; color: var(--muted); }
-.record-results tbody tr.locked-row:hover td { background: none; }
+.record-results tbody tr.pickable { cursor: pointer; }
+.record-results tbody tr.pickable:hover td { background: color-mix(in oklch, var(--accent) 5%, transparent); }
+.record-results tbody tr.locked-row { color: var(--muted); }
+.pick-button { padding: 0 8px; line-height: 1.5; font-weight: 600; }
+.segmented { display: inline-flex; justify-self: start; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.segmented button { border: none; border-radius: 0; background: none; padding: 4px 14px; }
+.segmented button.active { background: var(--accent); color: #fff; font-weight: 600; }
+.rule-preview .badge-rule { cursor: default; }
 .record-results .picked-row td { background: color-mix(in oklch, var(--accent) 12%, transparent); }
 .record-results .picked { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .record-results .picked .results-scroll { max-height: 25vh; }

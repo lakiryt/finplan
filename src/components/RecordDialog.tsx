@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { addsNothing, hasCriteria, kindOf, matches, opposite, outcomeOf, recordKey, UNASSIGNED_OFFSET, whollyExcluded, type Condition, type ProcessingConfig, type Target } from '../domain/processing'
+import { hasCriteria, isLocked, kindOf, matches, opposite, outcomeOf, recordKey, ruleEffect, whollyExcluded, type Condition, type ProcessingConfig, type Target } from '../domain/processing'
 import { txSide, type Side } from '../domain/raw'
 import type { Transaction } from '../domain/types'
 import { yen } from './format'
-import { SIDE_LABEL, type RecordsRequest, type RuleDraft } from './ruleText'
+import { describeRule, KIND_LABEL, SIDE_LABEL, type RecordsRequest, type RuleDraft } from './ruleText'
 
 const ANY = '__any__'
 /**
@@ -19,6 +19,7 @@ const DATE_MAX = '9999-12-31'
 /** 一覧に出す件数の上限（並べ替えた後の上位） */
 const RESULT_LIMIT = 200
 
+type Mode = 'condition' | 'pick'
 type SortKey = 'date' | 'amount' | 'category' | 'memo'
 interface Sort {
   key: SortKey
@@ -48,7 +49,7 @@ interface Props {
 }
 
 /**
- * 記録の画面（モーダル）。検索した記録を一覧にし、その検索か、一覧で選んだ記録を、3. の加工の条件にできる。
+ * 条件の画面（モーダル）。「条件で指定」か「1件ずつ選ぶ」かを切り替え、当たる記録と、保存される内容をその場で見せる。
  * 2. の棒グラフ（その月で絞った検索）や、3. の条件の追加・編集から開く。
  * ブラウザ標準の <dialog> を使う（Esc や背景のクリックで閉じる。保存するまでは設定に反映しない）
  */
@@ -83,7 +84,8 @@ function RecordEditor({
   const { id } = request
   const { records: initialRecords, ...initialSearch } = request.draft.when
   const [draft, setDraft] = useState<RuleDraft>({ ...request.draft, when: initialSearch })
-  // 一覧で選んだ記録（recordKey）。検索を変えても残る。1件でもあれば、保存する条件は選んだ記録だけになる
+  // 条件で指定するか（あとから増える記録にも当たる）、1件ずつ選ぶか。保存するのは選んでいる方だけ
+  const [mode, setMode] = useState<Mode>(initialRecords?.length ? 'pick' : 'condition')
   const [picked, setPicked] = useState<string[]>(initialRecords ?? [])
   // 一覧の並び順。見出しを押すとその列で並べ替え、同じ見出しをもう一度押すと昇順・降順を入れ替える
   const [sort, setSort] = useState<Sort>({ key: 'date', desc: true })
@@ -94,47 +96,48 @@ function RecordEditor({
   const toggleSort = (key: SortKey) =>
     // 日付・金額は新しい順・大きい順から、文字の列は五十音順から始める
     setSort((cur) => (cur.key === key ? { key, desc: !cur.desc } : { key, desc: key === 'date' || key === 'amount' }))
-  // 見るだけなら、検索の項目が無くても、その側の記録をすべて出す（条件にするときだけ項目が要る）
-  const hit = sorted(transactions.filter((t) => (hasCriteria(c) ? matches(c, t) : txSide(t) === c.side)))
+  const picking = mode === 'pick'
+  // 1件ずつ選ぶときは、入力欄は絞り込みなので、空ならその側の記録をすべて出す
+  const hit = sorted(transactions.filter((t) => (hasCriteria(c) ? matches(c, t) : picking && txSide(t) === c.side)))
   const pickedSet = new Set(picked)
   const pickedRows = sorted(transactions.filter((t) => txSide(t) === c.side && pickedSet.has(recordKey(t))))
   const found = new Set(pickedRows.map(recordKey))
   const missing = picked.filter((k) => !found.has(k)).length
   const toggle = (keys: string[], on: boolean) =>
     setPicked((cur) => (on ? [...new Set([...cur, ...keys])] : cur.filter((k) => !keys.includes(k))))
-  const sum = (list: Transaction[]) => yen(list.reduce((s, t) => s + Math.abs(t.amount), 0))
   const other = opposite(c.side)
-  // 保存する条件。記録を選んでいれば、検索の項目は使わず選んだ記録だけにする
-  const result: Condition = picked.length > 0 ? { side: c.side, records: picked } : c
+  const kind = kindOf(draft)
+  const when: Condition = picking ? { side: c.side, records: picked } : c
+  const effect = ruleEffect(transactions, processing, when, kind, id)
   const excluded = whollyExcluded(processing, other)
   const outcomes = useMemo(() => new Map(transactions.map((t) => [t, outcomeOf(t, processing)])), [transactions, processing])
-  // 編集中の条件を除いた今の加工で扱いが決まっていて、この条件を足しても変わらない記録は選べない
-  const others = useMemo(() => ({ ...processing, rules: processing.rules.filter((r) => r.id !== id) }), [processing, id])
-  const kind = kindOf(draft)
-  const blocked = (t: Transaction) => addsNothing(outcomeOf(t, others), kind)
-  const table = { sort, toggleSort, picked: pickedSet, toggle, outcomes, blocked }
+  const locked = (t: Transaction) => isLocked(t, processing, kind, id)
+  const addable = picking ? hit.filter((t) => !locked(t)).map(recordKey).filter((k) => !pickedSet.has(k)) : []
+  const table = { sort, toggleSort, picking, picked: pickedSet, toggle, outcomes, locked }
 
   return (
     <div className="record-editor">
-      <h3>{id ? '条件の編集' : '記録の一覧'}</h3>
-      <p className="muted small">検索して記録を確かめ、行を押すと記録を選べます。下で、その検索か選んだ記録を 3. の加工の条件にできます。</p>
-      <div className="editor-row">
-        対象
-        {(['expense', 'income'] as const).map((side) => (
-          <label key={side}>
-            <input
-              type="radio"
-              checked={c.side === side}
-              onChange={() => {
-                // 差し引く先は反対側のカテゴリーなので、側を変えたら選び直す
-                setDraft({ ...draft, when: { ...c, side, category: undefined }, target: null })
-                setPicked([])
-              }}
-            />
-            {SIDE_LABEL[side]}
-          </label>
-        ))}
-      </div>
+      <h3>{id ? '条件の編集' : '条件の追加'}</h3>
+      <Segmented
+        value={c.side}
+        options={[
+          ['expense', SIDE_LABEL.expense],
+          ['income', SIDE_LABEL.income],
+        ]}
+        onChange={(side) => {
+          // 差し引く先は反対側のカテゴリーなので、側を変えたら選び直す
+          setDraft({ ...draft, when: { ...c, side, category: undefined }, target: null })
+          setPicked([])
+        }}
+      />
+      <Segmented
+        value={mode}
+        options={[
+          ['condition', '条件で指定'],
+          ['pick', '1件ずつ選ぶ'],
+        ]}
+        onChange={setMode}
+      />
       <label className="editor-row">
         カテゴリー
         <select
@@ -167,70 +170,78 @@ function RecordEditor({
       </div>
 
       <div className="record-results">
-        <p className="muted small">
-          {hasCriteria(c) ? '検索に当たる記録' : `${SIDE_LABEL[c.side]}の記録すべて`}: 全期間で{hit.length}件・{sum(hit)}
-        </p>
+        {picking && (
+          <div className="editor-row">
+            <span className="muted small">{hit.length}件</span>
+            <button className="pin" disabled={!addable.length} onClick={() => toggle(addable, true)}>
+              ＋ 全部（{addable.length}件）
+            </button>
+          </div>
+        )}
         {hit.length > 0 && (
           <>
             <RecordTable rows={hit.slice(0, RESULT_LIMIT)} {...table} />
-            {hit.length > RESULT_LIMIT && <p className="muted small">ほか {hit.length - RESULT_LIMIT}件（検索で絞ると表示されます）</p>}
+            {hit.length > RESULT_LIMIT && <p className="muted small">ほか {hit.length - RESULT_LIMIT}件</p>}
           </>
         )}
-        {/* 選ぶたびに上の検索結果の行が動かないように、選んだ記録は下に出す */}
-        {picked.length > 0 && (
+        {picking && picked.length > 0 && (
           <div className="picked">
-            <p className="small">
-              <strong>
-                選んだ記録: {pickedRows.length}件・{sum(pickedRows)}
-              </strong>
-              <span className="muted">（条件にすると、この記録だけが対象になります）</span>
+            <div className="editor-row">
+              <strong className="small">選んだ記録 {pickedRows.length}件</strong>
               <button className="pin" onClick={() => setPicked([])}>
-                選択を解除
+                − 全部
               </button>
-            </p>
-            {missing > 0 && (
-              <p className="small">
-                <span className="warn-text">見つからない記録が{missing}件あります（家計簿で書き換えたか、読み込んだCSVに無い記録）</span>
-                <button className="pin" onClick={() => setPicked(picked.filter((k) => found.has(k)))}>
-                  外す
-                </button>
-              </p>
-            )}
+              {missing > 0 && (
+                <>
+                  <span className="warn-text small">見つからない記録 {missing}件</span>
+                  <button className="pin" onClick={() => setPicked(picked.filter((k) => found.has(k)))}>
+                    − 外す
+                  </button>
+                </>
+              )}
+            </div>
             {pickedRows.length > 0 && <RecordTable rows={pickedRows} {...table} />}
           </div>
         )}
       </div>
 
       <div className="record-footer">
-        <div className="editor-row">
-          <strong>{picked.length > 0 ? `選んだ記録${picked.length}件` : 'この検索に当たる記録'}</strong>を{SIDE_LABEL[c.side]}から除き、{SIDE_LABEL[other]}側では
-          <select
-            value={targetValue(draft.target)}
-            onChange={(e) => setDraft({ ...draft, target: parseTargetValue(e.target.value) })}
-          >
+        <label className="editor-row">
+          {SIDE_LABEL[other]}から
+          <select value={targetValue(draft.target)} onChange={(e) => setDraft({ ...draft, target: parseTargetValue(e.target.value) })}>
             <option value={NO_TARGET}>差し引かない（除外）</option>
             <option value={UNASSIGNED}>カテゴリーを指定せずに差し引く（相殺）</option>
             {categories[other].map((cat) => (
               // カテゴリー全体を除外している先へ差し引くと、除外と同じになるので選べない
               <option key={cat} value={targetValue({ category: cat })} disabled={excluded.has(cat)}>
-                「{cat || '（空欄）'}」{excluded.has(cat) ? '（除外しているので選べません）' : 'から差し引く（相殺）'}
+                「{cat || '（空欄）'}」{excluded.has(cat) ? '（除外中）' : 'から差し引く（相殺）'}
               </option>
             ))}
           </select>
+        </label>
+        {/* 保存される内容。文章で説明する代わりに、3. に並ぶバッジと同じものを見せる */}
+        <div className="editor-row rule-preview">
+          <span className="badge-rule">
+            {KIND_LABEL[kind]}｜{SIDE_LABEL[c.side]}｜{describeRule({ ...draft, when })}
+          </span>
+          <span className="small">
+            {effect.count}件・{yen(effect.total)}
+          </span>
+          {effect.changedCount < effect.count && (
+            <span className="muted small">
+              （変わるのは {effect.changedCount}件・{yen(effect.changedTotal)}）
+            </span>
+          )}
         </div>
-        {draft.target?.category === null && (
-          <p className="muted small">内訳を気にしないとき向けです。{SIDE_LABEL[other]}のどのカテゴリーにも付けずに全体から差し引き、2. では「{UNASSIGNED_OFFSET}」として灰色で出します。</p>
-        )}
-        {!hasCriteria(result) && <p className="muted small">条件にするには、カテゴリー・メモ・期間のどれかで検索するか、記録を選んでください（何も指定しないと全件に当たってしまうため）。</p>}
         <div className="editor-row">
           <button
-            disabled={!hasCriteria(result)}
+            disabled={!hasCriteria(when)}
             onClick={() => {
-              onSave({ ...draft, when: result }, id)
+              onSave({ ...draft, when }, id)
               close()
             }}
           >
-            {id ? '保存' : '条件として保存'}
+            保存
           </button>
           <button onClick={close}>閉じる</button>
           {id && (
@@ -255,43 +266,45 @@ function RecordEditor({
   )
 }
 
+function Segmented<T extends string>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (value: T) => void }) {
+  return (
+    <div className="segmented" role="radiogroup">
+      {options.map(([key, label]) => (
+        <button key={key} role="radio" aria-checked={value === key} className={value === key ? 'active' : undefined} onClick={() => onChange(key)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 interface TableProps {
   rows: Transaction[]
   sort: Sort
   toggleSort: (key: SortKey) => void
+  /** 1件ずつ選ぶ画面か（＋ / − の列を出し、行を押すと選ぶ・外す） */
+  picking: boolean
   picked: Set<string>
   toggle: (keys: string[], on: boolean) => void
   outcomes: Map<Transaction, ReturnType<typeof outcomeOf>>
-  /** この条件を足しても変わらない記録か（選べない。すでに選んでいれば外せる） */
-  blocked: (t: Transaction) => boolean
+  /** この条件を足しても変わらない記録か（薄く出す。選べないが、すでに選んでいれば外せる） */
+  locked: (t: Transaction) => boolean
 }
 
-/** 記録の一覧。行を押すと選ぶ・外す（見出しのチェックは、一覧にある記録をまとめて選ぶ・外す）。右端に今の加工で起きていることを出す */
-function RecordTable({ rows, sort, toggleSort, picked, toggle, outcomes, blocked }: TableProps) {
-  const keys = rows.map(recordKey)
-  const locked = rows.map((t, i) => blocked(t) && !picked.has(keys[i]))
-  const selectable = keys.filter((_, i) => !locked[i])
-  const all = selectable.length > 0 && selectable.every((k) => picked.has(k))
+/** 記録の一覧。右端に今の加工で起きていることを出す */
+function RecordTable({ rows, sort, toggleSort, picking, picked, toggle, outcomes, locked }: TableProps) {
   const processed = (t: Transaction) => {
     const o = outcomes.get(t)
     if (!o || o.kind === 'keep') return ''
     if (o.kind === 'exclude') return '除外'
-    return o.moved ? `相殺 →「${o.target || '（空欄）'}」` : `除外（差し引く先の「${o.target || '（空欄）'}」が除外のため）`
+    return o.moved ? `相殺 →「${o.target || '（空欄）'}」` : `除外（「${o.target || '（空欄）'}」が除外中）`
   }
   return (
     <div className="results-scroll">
       <table>
         <thead>
           <tr>
-            <th>
-              <input
-                type="checkbox"
-                checked={all}
-                disabled={!selectable.length}
-                onChange={() => toggle(selectable, !all)}
-                title={all ? '一覧の記録をすべて外す' : '一覧の選べる記録をすべて選ぶ'}
-              />
-            </th>
+            {picking && <th />}
             {COLUMNS.map((col) => (
               <th key={col.key} className={col.num ? 'num' : undefined} aria-sort={sort.key === col.key ? (sort.desc ? 'descending' : 'ascending') : 'none'}>
                 <button className="sort-button" onClick={() => toggleSort(col.key)}>
@@ -304,23 +317,28 @@ function RecordTable({ rows, sort, toggleSort, picked, toggle, outcomes, blocked
           </tr>
         </thead>
         <tbody>
-          {rows.map((t, i) => (
-            <tr
-              key={t.id}
-              className={picked.has(keys[i]) ? 'picked-row' : locked[i] ? 'locked-row' : undefined}
-              title={locked[i] ? 'すでにほかの条件で加工されているので、この条件を足しても変わりません' : undefined}
-              onClick={() => !locked[i] && toggle([keys[i]], !picked.has(keys[i]))}
-            >
-              <td>
-                <input type="checkbox" checked={picked.has(keys[i])} disabled={locked[i]} readOnly />
-              </td>
-              <td className="num">{t.date}</td>
-              <td className="num">{yen(t.amount)}</td>
-              <td>{t.category || '（空欄）'}</td>
-              <td className="results-memo">{t.memo}</td>
-              <td className="muted small">{processed(t)}</td>
-            </tr>
-          ))}
+          {rows.map((t) => {
+            const key = recordKey(t)
+            const on = picked.has(key)
+            const off = locked(t) && !(picking && on)
+            const pickable = picking && !off
+            return (
+              <tr key={t.id} className={[picking && on ? 'picked-row' : '', off ? 'locked-row' : '', pickable ? 'pickable' : ''].join(' ')} onClick={() => pickable && toggle([key], !on)}>
+                {picking && (
+                  <td>
+                    <button className="pick-button" disabled={off} aria-label={on ? '外す' : '選ぶ'}>
+                      {on ? '−' : '＋'}
+                    </button>
+                  </td>
+                )}
+                <td className="num">{t.date}</td>
+                <td className="num">{yen(t.amount)}</td>
+                <td>{t.category || '（空欄）'}</td>
+                <td className="results-memo">{t.memo}</td>
+                <td className="muted small">{processed(t)}</td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

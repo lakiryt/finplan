@@ -6,6 +6,7 @@ import {
   activeRules,
   addsNothing,
   hasCriteria,
+  isLocked,
   isProcessed,
   whollyExcluded,
   matches,
@@ -13,6 +14,8 @@ import {
   parseProcessingConfig,
   processedAmounts,
   recordKey,
+  ruleEffect,
+  rulesAhead,
   UNASSIGNED_OFFSET,
   type Condition,
   type ProcessingConfig,
@@ -138,6 +141,60 @@ describe('records whose handling is already decided', () => {
     expect(addsNothing(outcomeOf(rent, offset), 'exclude')).toBe(true)
     expect(addsNothing(outcomeOf(rent, offset), 'offset')).toBe(true)
     expect(addsNothing(outcomeOf(rent, config()), 'exclude')).toBe(false)
+  })
+})
+
+describe('what a new or edited rule would change', () => {
+  const hotel = byMemo(txs, 'ホテル2泊')!
+  const rent = byMemo(txs, '家賃')!
+  const excludeRent = { when: { side: 'expense', category: '家賃' } } as const
+  const offsetHotel = { when: { side: 'expense', memo: '泊' }, target: '給与' } as const
+
+  it('locks records by the kind of rule being added', () => {
+    const c = config([excludeRent], [offsetHotel])
+    expect(isLocked(rent, c, 'exclude')).toBe(true)
+    expect(isLocked(rent, c, 'offset')).toBe(false)
+    expect(isLocked(hotel, c, 'exclude')).toBe(true)
+    expect(isLocked(hotel, c, 'offset')).toBe(true)
+  })
+
+  it('does not count the rule being edited against itself', () => {
+    const c = config([excludeRent])
+    expect(isLocked(rent, c, 'exclude', 'e0')).toBe(false)
+    // 無効の条件や無効の区分は、数えない
+    expect(isLocked(rent, { ...c, rules: [{ ...c.rules[0], enabled: false }] }, 'exclude')).toBe(false)
+    expect(isLocked(rent, { ...c, enabled: { ...c.enabled, expense: { offset: true, exclude: false } } }, 'exclude')).toBe(false)
+  })
+
+  it('treats only earlier offsets as winning over an edited offset', () => {
+    const c = config([], [offsetHotel, { when: { side: 'expense', category: '家賃' }, target: '給与' }])
+    // 先の相殺は、後ろの相殺に負けない
+    expect(isLocked(hotel, c, 'offset', 'o0')).toBe(false)
+    expect(isLocked(hotel, c, 'offset', 'o1')).toBe(true)
+    expect(rulesAhead(c, 'offset', 'o0').rules).toEqual([])
+    // 除外は、後ろの相殺にも負ける
+    expect(rulesAhead(c, 'exclude').rules).toHaveLength(2)
+  })
+
+  it('reports what a rule hits and what it actually changes', () => {
+    const c = config([{ when: { side: 'expense', memo: '泊' } }])
+    expect(ruleEffect(txs, c, excludeRent.when, 'exclude')).toEqual({ count: 2, total: 68_000, changedCount: 1, changedTotal: 60_000 })
+    expect(ruleEffect(txs, c, excludeRent.when, 'offset')).toEqual({ count: 2, total: 68_000, changedCount: 2, changedTotal: 68_000 })
+    expect(ruleEffect(txs, c, { side: 'expense' }, 'exclude').count).toBe(0)
+  })
+
+  it('reports the change that saving really makes to the expense total', () => {
+    const c = config([{ when: { side: 'expense', memo: '泊' } }])
+    const { changedTotal } = ruleEffect(txs, c, excludeRent.when, 'exclude')
+    const after = config([{ when: { side: 'expense', memo: '泊' } }, excludeRent])
+    const expense = (list: typeof txs) => rows(list).reduce((s, r) => s + r.expense, 0)
+    expect(expense(applyProcessing(txs, c)) - expense(applyProcessing(txs, after))).toBe(changedTotal)
+  })
+
+  it('picks records by key, and counts identical records together', () => {
+    const twin = { ...rent, id: '99' }
+    const when: Condition = { side: 'expense', records: [recordKey(rent)] }
+    expect(ruleEffect([rent, twin, hotel], config(), when, 'exclude')).toMatchObject({ count: 2, total: 120_000 })
   })
 })
 
